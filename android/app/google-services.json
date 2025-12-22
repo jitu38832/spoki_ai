@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "303958409160",
+    "project_id": "spoki-ai-18e6f",
+    "storage_bucket": "spoki-ai-18e6f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:303958409160:android:b125d149f09eaa7b1c8afd",
+        "android_client_info": {
+          "package_name": "com.spokiai"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "303958409160-9b7osf8gjlao6gukjdrdnfrgdu67h1gp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spokiai",
+            "certificate_hash": "463ad8501ed253891e344370aae01e93bfcb03d6"
+          }
+        },
+        {
+          "client_id": "303958409160-dkuk2e7fq58bvsdij0l79v7do6j0krfo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAsFif3myZmXLEKyzfP5Vzf-Bk22nTzdjA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "303958409160-dkuk2e7fq58bvsdij0l79v7do6j0krfo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
