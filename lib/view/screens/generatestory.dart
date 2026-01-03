@@ -180,77 +180,84 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                     }
 
                     if (state.status == AppStatus.generateStoryError) {
-
                       showToast(
                           context: context,
                           message: state.errorData?.message.toString() ?? "");
                     }
                   },
                   builder: (context, state) {
-                    return
+                    return state.status == AppStatus.generateStoryLoading
+                        ? Center(
+                            child: CircularProgressIndicator(
+                              color: appColor,
+                            ),
+                          )
+                        : Card(
+                            elevation: 6,
+                            shadowColor: appColor.withOpacity(0.8),
+                            child: Container(
+                              width: double.infinity,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: appColor,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () {
+                                    // CustomNavigator.push(
+                                    //   context: context,
+                                    //   screen:  StorydescriptionScreen()
+                                    // );
 
-                      state.status==AppStatus.generateStoryLoading?Center(
-                        child:
-                        CircularProgressIndicator(color: appColor,),
-                      ):Card(
-                      elevation: 6,
-                      shadowColor: appColor.withOpacity(0.8),
-                      child: Container(
-                        width: double.infinity,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: appColor,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              // CustomNavigator.push(
-                              //   context: context,
-                              //   screen:  StorydescriptionScreen()
-                              // );
+                                    if (isValidation()) {
+                                      FocusManager.instance.primaryFocus
+                                          ?.unfocus();
 
-                              if (isValidation()) {
-                                FocusManager.instance.primaryFocus?.unfocus();
+                                      Map<String, dynamic> storyDetails = {
+                                        "stroyDescription":
+                                            _storyDescriptionController.text
+                                                .toString()
+                                                .trim(),
+                                        "storyLength": _selectedLength
+                                            .toString()
+                                            .toLowerCase(),
+                                        "genre": _selectedGenre,
+                                        "style": _selectedStyle,
+                                        "learningLevel": _selectedLevel
+                                                .toString()
+                                                .contains('(')
+                                            ? _selectedLevel
+                                                .toString()
+                                                .split('(')[1]
+                                                .replaceAll(')', '')
+                                                .trim()
+                                                .toLowerCase()
+                                            : _selectedLevel
+                                                .toString()
+                                                .toLowerCase(),
+                                        // "provider": "openai"
+                                      };
 
-                                Map<String, dynamic> storyDetails = {
-                                  "stroyDescription":
-                                      _storyDescriptionController.text
-                                          .toString()
-                                          .trim(),
-                                  "storyLength": _selectedLength.toString().toLowerCase(),
-                                  "genre": _selectedGenre,
-                                  "style": _selectedStyle,
-                                  "learningLevel":
-                                      _selectedLevel.toString().contains('(')
-                                          ? _selectedLevel
-                                              .toString()
-                                              .split('(')[1]
-                                              .replaceAll(')', '')
-                                              .trim().toLowerCase()
-                                          : _selectedLevel.toString().toLowerCase(),
-                                  // "provider": "openai"
-                                };
-
-                                print(storyDetails);
-                                BlocProvider.of<AppCubit>(context)
-                                    .generateStory(token, storyDetails);
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(12),
-                            child: Center(
-                              child: textInter(
-                                text: "Generate Story",
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                                      print(storyDetails);
+                                      BlocProvider.of<AppCubit>(context)
+                                          .generateStory(token, storyDetails);
+                                    }
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Center(
+                                    child: textInter(
+                                      text: "Generate Story",
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
-                    );
+                          );
                   },
                 )
               ],

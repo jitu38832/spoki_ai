@@ -107,12 +107,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             icon: Icons.star,
                             gradientColors: [appColor, appColor],
                             onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const ChatScreen(),
-                                ),
-                              );
+                              // Navigator.push(
+                              //   context,
+                              //   MaterialPageRoute(
+                              //     builder: (context) => const ChatScreen(),
+                              //   ),
+                              // );
                             },
                           ),
                         ],

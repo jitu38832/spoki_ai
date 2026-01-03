@@ -28,6 +28,11 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>NSMicrophoneUsageDescription</key>
+    <string>This app needs microphone access to convert your speech to text for chatting.</string>
+
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>This app uses speech recognition to understand what you say.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -427,29 +427,46 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: _isCorrect ? Colors.green[50] : Colors.red[50],
+                          // color: _isCorrect ? Colors.green[50] : Colors.red[50],
+                          color: _isCorrect ? Colors.green[50] : Colors.green[50],
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: _isCorrect ? Colors.green : Colors.red,
+                            color: _isCorrect ? Colors.green : Colors.green,
                             width: 2,
                           ),
                         ),
-                        child: Row(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              _isCorrect ? Icons.check_circle : Icons.error,
-                              color: _isCorrect ? Colors.green : Colors.red,
+                            _isCorrect?SizedBox():   textInter(
+                              text: "Correct Answer:",
+                              fontSize: 15,
+                              fontWeight: FontWeight.w400,
+                              maxLines: 10,
+                              color: Colors.black,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: textInter(
-                                text: _explanation ?? "No explanation available.",
-                                fontSize: 15,
-                                fontWeight: FontWeight.w400,
-                                maxLines: 10,
-                                color: Colors.black,
-                              ),
+                            _isCorrect?SizedBox(): SizedBox(
+                              height: 10,
+                            ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _isCorrect?  Icon(
+                                  _isCorrect ? Icons.check_circle : Icons.error,
+                                  color: _isCorrect ? Colors.green : Colors.red,
+                                ):SizedBox(),
+                                _isCorrect?  const SizedBox(width: 12):SizedBox(),
+                                Expanded(
+                                  child: textInter(
+                                    text: _explanation ?? "No explanation available.",
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w400,
+                                    maxLines: 10,
+                                    textAlign: TextAlign.start,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

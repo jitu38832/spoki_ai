@@ -3,12 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:spokiai/view/screens/storyDescription.dart';
-
+import 'package:spokiai/view/screens/chat.dart';
 import '../utils/colors.dart';
 import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
-import 'chat.dart';
 
 class Chatlist extends StatefulWidget {
   const Chatlist({super.key});
@@ -18,24 +16,65 @@ class Chatlist extends StatefulWidget {
 }
 
 class _ChatlistState extends State<Chatlist> {
-  String? gender;
-  String? ageStage;
   String _selectedGender = 'Male';
   String _selectedAge = 'Young';
-  File? selectedImage;
+  String? _selectedImagePath; // Holds path of selected image (asset or file)
 
-  final TextEditingController _storyDescriptionController =
-      TextEditingController();
+  final TextEditingController nameController = TextEditingController();
 
-  Future<void> pickImage() async {
+  // Predefined images (replace with your actual asset paths)
+  final List<String> boyImages = [
+    "assets/images/boy1.jpeg",
+    "assets/images/boy2.jpeg",
+    "assets/images/boy3.jpeg",
+  ];
+  String? _selectedLanguage;
+
+
+  final List<String> languages = [
+    "Chinese",
+    "Arabic",
+    "French",        // corrected spelling
+    "German",
+    "Indonesian",
+    "Italian",
+    "Japanese",
+    "Korean",
+    "Russian",
+    "Spanish",       // corrected spelling
+    "Thai",
+    "Turkish",
+    "Vietnamese",
+    "Persian",
+    "Hindi",
+    "Telugu",
+    "Tamil",
+    "Malayalam",
+    "Kannada",
+    "Bengali",
+  ];
+
+  final List<String> girlImages = [
+    "assets/images/girl1.jpeg",
+    "assets/images/girl2.jpeg",
+    "assets/images/girl3.jpeg",
+  ];
+
+  Future<void> pickImageFromGallery() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
     if (image != null) {
       setState(() {
-        selectedImage = File(image.path);
+        _selectedImagePath = image.path; // Use gallery image
       });
     }
+  }
+
+  void selectPredefinedImage(String assetPath) {
+    setState(() {
+      _selectedImagePath = assetPath;
+    });
   }
 
   @override
@@ -58,8 +97,27 @@ class _ChatlistState extends State<Chatlist> {
               color: Colors.transparent,
               child: InkWell(
                 onTap: () {
-                  CustomNavigator.push(
-                      context: context, screen: ChatScreen());
+                  if (nameController.text.trim().isEmpty) {
+                    showToast(context: context, message: "Please enter name");
+                  } else  if (_selectedLanguage==null) {
+                    showToast(context: context, message: "Please select language");
+                  } else {
+                    Map<String, dynamic> partnerDetails = {
+                      "name": nameController.text.trim(),
+                      "gender": _selectedGender,
+                      "age": _selectedAge,
+                      "language": _selectedLanguage,
+                      "photo": _selectedImagePath, // Can be asset path or file path
+                    };
+
+                    print("All details");
+                    print(partnerDetails);
+
+                    CustomNavigator.push(
+                      context: context,
+                      screen: ChatScreen(partnerDetails: partnerDetails),
+                    );
+                  }
                 },
                 borderRadius: BorderRadius.circular(12),
                 child: Center(
@@ -78,10 +136,7 @@ class _ChatlistState extends State<Chatlist> {
       appBar: AppBar(
         title: const Text(
           "Choose Partner",
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         centerTitle: true,
         elevation: 0,
@@ -91,152 +146,228 @@ class _ChatlistState extends State<Chatlist> {
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(15.0),
-          child: Padding(
-            padding: const EdgeInsets.all(15.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                      padding: const EdgeInsets.all(8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset("assets/images/iv_cartoon.png", height: 30,width: 30,),
-                          SizedBox(
-                            width: 30,
-                          ),
-                          Image.asset("assets/images/iv_cartoon.png",height: 30,width: 30,)
-                        ],
-                      )),
-                ),
-
-                const SizedBox(height: 20),
-
-                // TITLE
-                const Text(
-                  "Write Your Partner's Name",
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset("assets/images/iv_cartoon.png", height: 30, width: 30),
+                      const SizedBox(width: 30),
+                      Image.asset("assets/images/iv_cartoon.png", height: 30, width: 30),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
+              ),
 
-                _buildStoryDescriptionInput(),
-                const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
-                // GENDER --------------------------------
-                const Text(
-                  "Gender",
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
+              const Text(
+                "Write Your Partner's Name",
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 10),
+
+              _buildStoryDescriptionInput(),
+              const SizedBox(height: 24),
+
+              const Text(
+                "Gender",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              _buildGenderSelection(),
+
+              const SizedBox(height: 20),
+
+              const Text(
+                "Age Stage",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              _buildAgeSelection(),
+
+              const SizedBox(height: 20),
+
+              const Text(
+                "Language",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[400]!),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white,
                 ),
-
-                const SizedBox(height: 10),
-
-                _buildGenderSelection(),
-
-                const SizedBox(height: 20),
-
-                // AGE STAGE -------------------------------
-                const Text(
-                  "Age Stage",
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
+                child: DropdownButton<String>(
+                  value: _selectedLanguage,
+                  hint: const Text(
+                    "Select a language",
+                    style: TextStyle(color: Colors.grey),
                   ),
+                  isExpanded: true,
+                  icon: const Icon(Icons.arrow_drop_down),
+                  underline: const SizedBox(), // removes default underline
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      _selectedLanguage = newValue;
+                    });
+                  },
+                  items: languages.map<DropdownMenuItem<String>>((String language) {
+                    return DropdownMenuItem<String>(
+                      value: language,
+                      child: Text(language),
+                    );
+                  }).toList(),
                 ),
-                const SizedBox(height: 10),
+              ),
 
-                _buildAgeSelection(),
+              const SizedBox(height: 20),
 
-                const SizedBox(height: 20),
 
-                // PHOTO SELECT -----------------------------
-                const Text(
-                  "Add a photo for your Character.",
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
+
+              const Text(
+                "Choose a photo for your Character",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Column(
+                    children: const [
+                      Icon(Icons.upload, size: 40, color: Colors.blue),
+                      Text("Upload"),
+                    ],
                   ),
-                ),
-
-                const SizedBox(height: 10),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    Column(
+                  const Text(
+                    "OR",
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  GestureDetector(
+                    onTap: pickImageFromGallery,
+                    child: Column(
                       children: const [
-                        Icon(Icons.upload, size: 40, color: Colors.blue),
-                        Text("Upload"),
+                        Icon(Icons.photo_library, size: 40, color: Colors.lightBlue),
+                        Text("Choose"),
                       ],
                     ),
-                    const Text(
-                      "OR",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // Boy Images
+              // const Text("Boys", style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 100,
+                width: MediaQuery.of(context).size.width,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: boyImages.length,
+                  itemBuilder: (context, index) {
+                    String path = boyImages[index];
+                    bool isSelected = _selectedImagePath == path;
+                    return GestureDetector(
+                      onTap: () => selectPredefinedImage(path),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? appColor : Colors.transparent,
+                            width: isSelected ? 2 : 0,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.asset(
+                            path,
+               width: MediaQuery.of(context).size.width*0.28,
+                            height: 90,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        pickImage();
-                      },
-                      child: Column(
-                        children: const [
-                          Icon(Icons.photo_library,
-                              size: 40, color: Colors.lightBlue),
-                          Text("Choose"),
-                        ],
+                    );
+                  },
+                ),
+              ),
+
+              // const SizedBox(height: 20),
+              //
+              // // Girl Images
+              // const Text("Girls", style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 100,
+                width: MediaQuery.of(context).size.width,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: girlImages.length,
+                  itemBuilder: (context, index) {
+                    String path = girlImages[index];
+                    bool isSelected = _selectedImagePath == path;
+                    return GestureDetector(
+                      onTap: () => selectPredefinedImage(path),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? appColor : Colors.transparent,
+                            width: isSelected ? 2 : 0,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.asset(
+                            path,
+                            width: MediaQuery.of(context).size.width*0.28,
+                            height: 90,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 30),
+
+              // Selected Image Preview
+              if (_selectedImagePath != null)
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: _selectedImagePath!.startsWith("assets/")
+                        ? Image.asset(
+                      _selectedImagePath!,
+                      height: 100,
+                      width: MediaQuery.of(context).size.width*0.28,
+                      fit: BoxFit.cover,
+                    )
+                        : Image.file(
+                      File(_selectedImagePath!),
+                      height: 100,
+                      width: MediaQuery.of(context).size.width*0.28,
+                      fit: BoxFit.cover,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                
-                SizedBox(
-                  height: MediaQuery.of(context).size.height*0.1,
-                  child: GridView.builder(
-                    itemCount: 3,
-
-                    physics: NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      mainAxisSpacing: 20,
-                        childAspectRatio: 2,
-
-                        crossAxisCount: 3), itemBuilder: (context, index) {
-                    return Image.asset("assets/images/iv_male.jpg", height: 70,width: 70,);
-                  },),
-                ),
-                SizedBox(
-                  height: MediaQuery.of(context).size.height*0.1,
-                  child: GridView.builder(
-                    itemCount: 3,
-
-                    physics: NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        mainAxisSpacing: 20,
-                        childAspectRatio: 2,
-
-                        crossAxisCount: 3), itemBuilder: (context, index) {
-                    return Image.asset("assets/images/iv_girl.jpg", height: 70,width: 70,);
-                  },),
+                  ),
                 ),
 
-                const SizedBox(height: 20),
-                if (selectedImage != null)
-                  Image.file(
-                    selectedImage!,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  )
-              ],
-            ),
+              const SizedBox(height: 40),
+            ],
           ),
         ),
       ),
@@ -247,13 +378,8 @@ class _ChatlistState extends State<Chatlist> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(
-          color: Colors.grey[300]!,
-          width: 2, // <-- Increased border width
-        ),
+        border: Border.all(color: Colors.grey[300]!, width: 2),
         borderRadius: BorderRadius.circular(12),
-
-        // ---- Shadow added ----
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.10),
@@ -264,7 +390,7 @@ class _ChatlistState extends State<Chatlist> {
         ],
       ),
       child: TextField(
-        controller: _storyDescriptionController,
+        controller: nameController,
         maxLines: 1,
         decoration: InputDecoration(
           hintText: "Enter name",
@@ -274,8 +400,7 @@ class _ChatlistState extends State<Chatlist> {
             color: Colors.grey[600],
           ),
           border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
         style: GoogleFonts.roboto(
           fontSize: 14,
@@ -291,29 +416,23 @@ class _ChatlistState extends State<Chatlist> {
       padding: const EdgeInsets.all(8.0),
       child: Row(
         children: [
-          Expanded(
-            child: _buildGenderButton('Male',
-                isSelected: _selectedGender == 'Male'),
-          ),
+          Expanded(child: _buildGenderButton('Male', isSelected: _selectedGender == 'Male')),
+          const SizedBox(width: 12),
+          Expanded(child: _buildGenderButton('Female', isSelected: _selectedGender == 'Female')),
           const SizedBox(width: 12),
           Expanded(
-            child: _buildGenderButton('Female',
-                isSelected: _selectedGender == 'Female'),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildGenderButton('Other',
-                isSelected: _selectedGender == 'Other', hasLock: true),
+            child: _buildGenderButton('Other', isSelected: _selectedGender == 'Other',),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGenderButton(String label,
-      {required bool isSelected, bool hasLock = false}) {
+  Widget _buildGenderButton(String label, {required bool isSelected, bool hasLock = false}) {
     return GestureDetector(
-      onTap: () {
+      onTap: hasLock
+          ? null
+          : () {
         setState(() {
           _selectedGender = label;
         });
@@ -331,8 +450,13 @@ class _ChatlistState extends State<Chatlist> {
               text: label,
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: isSelected ? Colors.white : Colors.white,
+              color: Colors.white,
             ),
+            if (hasLock)
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.lock, size: 16, color: Colors.white70),
+              ),
           ],
         ),
       ),
@@ -344,33 +468,21 @@ class _ChatlistState extends State<Chatlist> {
       padding: const EdgeInsets.all(8.0),
       child: Row(
         children: [
-          Expanded(
-            child:
-                _buildAgeButton('Young', isSelected: _selectedAge == 'Young'),
-          ),
+          Expanded(child: _buildAgeButton('Young', isSelected: _selectedAge == 'Young')),
           const SizedBox(width: 12),
-          Expanded(
-            child:
-                _buildAgeButton('Adult', isSelected: _selectedAge == 'Adult'),
-          ),
+          Expanded(child: _buildAgeButton('Adult', isSelected: _selectedAge == 'Adult')),
           const SizedBox(width: 12),
-          Expanded(
-            child: _buildAgeButton(
-              'Old',
-              isSelected: _selectedAge == 'Old',
-            ),
-          ),
+          Expanded(child: _buildAgeButton('Old', isSelected: _selectedAge == 'Old')),
         ],
       ),
     );
   }
 
-  Widget _buildAgeButton(String label,
-      {required bool isSelected, bool hasLock = false}) {
+  Widget _buildAgeButton(String label, {required bool isSelected}) {
     return GestureDetector(
       onTap: () {
         setState(() {
-          _selectedGender = label;
+          _selectedAge = label;
         });
       },
       child: Container(
@@ -386,20 +498,10 @@ class _ChatlistState extends State<Chatlist> {
               text: label,
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: isSelected ? Colors.white : Colors.white,
+              color: Colors.white,
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _sampleImage(String path) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: Image.asset(
-        path,
-        fit: BoxFit.cover,
       ),
     );
   }

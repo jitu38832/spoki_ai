@@ -333,29 +333,45 @@ class _QuizHistoryScreenState extends State<QuizHistoryScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: wasCorrect ? Colors.green[50] : Colors.red[50],
+                        color: wasCorrect ? Colors.green[50] : Colors.green[50],
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: wasCorrect ? Colors.green : Colors.red,
+                          color: wasCorrect ? Colors.green : Colors.green,
                           width: 2,
                         ),
                       ),
-                      child: Row(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            wasCorrect ? Icons.check_circle : Icons.error,
-                            color: wasCorrect ? Colors.green : Colors.red,
+                          wasCorrect?SizedBox():   textInter(
+                            text: "Correct Answer:",
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                            maxLines: 10,
+                            color: Colors.black,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: textInter(
-                              text: explanationText,
-                              fontSize: 15,
-                              maxLines: 5,
-                              fontWeight: FontWeight.w400,
-                              color: Colors.black,
-                            ),
+                          wasCorrect?SizedBox(): SizedBox(
+                            height: 10,
+                          ),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              wasCorrect?  Icon(
+                                wasCorrect ? Icons.check_circle : Icons.error,
+                                color: wasCorrect ? Colors.green : Colors.red,
+                              ):SizedBox(),
+                              wasCorrect?  const SizedBox(width: 12):SizedBox(),
+                              Expanded(
+                                child: textInter(
+                                  text: explanationText,
+                                  fontSize: 15,
+                                  maxLines: 5,
+                                  fontWeight: FontWeight.w400,
+                                  textAlign: TextAlign.start,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
