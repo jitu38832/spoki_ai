@@ -11,7 +11,7 @@ class SocketService {
 
   void initSocket() {
     socket = IO.io(
-      'http://13.127.143.122:9799', // Base URL (http for handshake, upgrades to ws)
+      'ws://13.109.110.211', // Base URL (http for handshake, upgrades to ws)
       IO.OptionBuilder()
           .setTransports(['websocket']) // Force websocket only (best for Flutter)
           .enableAutoConnect()          // Auto connect on creation

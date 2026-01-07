@@ -30,18 +30,17 @@ class _ChatlistState extends State<Chatlist> {
   ];
   String? _selectedLanguage;
 
-
   final List<String> languages = [
     "Chinese",
     "Arabic",
-    "French",        // corrected spelling
+    "French", // corrected spelling
     "German",
     "Indonesian",
     "Italian",
     "Japanese",
     "Korean",
     "Russian",
-    "Spanish",       // corrected spelling
+    "Spanish", // corrected spelling
     "Thai",
     "Turkish",
     "Vietnamese",
@@ -99,15 +98,17 @@ class _ChatlistState extends State<Chatlist> {
                 onTap: () {
                   if (nameController.text.trim().isEmpty) {
                     showToast(context: context, message: "Please enter name");
-                  } else  if (_selectedLanguage==null) {
-                    showToast(context: context, message: "Please select language");
+                  } else if (_selectedLanguage == null) {
+                    showToast(
+                        context: context, message: "Please select language");
                   } else {
                     Map<String, dynamic> partnerDetails = {
                       "name": nameController.text.trim(),
                       "gender": _selectedGender,
                       "age": _selectedAge,
-                      "language": _selectedLanguage,
-                      "photo": _selectedImagePath, // Can be asset path or file path
+                      "language": _selectedLanguage.toString().toLowerCase(),
+                      "photo": _selectedImagePath,
+                      // Can be asset path or file path
                     };
 
                     print("All details");
@@ -155,9 +156,11 @@ class _ChatlistState extends State<Chatlist> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Image.asset("assets/images/iv_cartoon.png", height: 30, width: 30),
+                      Image.asset("assets/images/iv_cartoon.png",
+                          height: 30, width: 30),
                       const SizedBox(width: 30),
-                      Image.asset("assets/images/iv_cartoon.png", height: 30, width: 30),
+                      Image.asset("assets/images/iv_cartoon.png",
+                          height: 30, width: 30),
                     ],
                   ),
                 ),
@@ -199,7 +202,8 @@ class _ChatlistState extends State<Chatlist> {
               const SizedBox(height: 10),
 
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 decoration: BoxDecoration(
                   border: Border.all(color: Colors.grey[400]!),
                   borderRadius: BorderRadius.circular(12),
@@ -213,13 +217,15 @@ class _ChatlistState extends State<Chatlist> {
                   ),
                   isExpanded: true,
                   icon: const Icon(Icons.arrow_drop_down),
-                  underline: const SizedBox(), // removes default underline
+                  underline: const SizedBox(),
+                  // removes default underline
                   onChanged: (String? newValue) {
                     setState(() {
                       _selectedLanguage = newValue;
                     });
                   },
-                  items: languages.map<DropdownMenuItem<String>>((String language) {
+                  items: languages
+                      .map<DropdownMenuItem<String>>((String language) {
                     return DropdownMenuItem<String>(
                       value: language,
                       child: Text(language),
@@ -229,8 +235,6 @@ class _ChatlistState extends State<Chatlist> {
               ),
 
               const SizedBox(height: 20),
-
-
 
               const Text(
                 "Choose a photo for your Character",
@@ -255,7 +259,8 @@ class _ChatlistState extends State<Chatlist> {
                     onTap: pickImageFromGallery,
                     child: Column(
                       children: const [
-                        Icon(Icons.photo_library, size: 40, color: Colors.lightBlue),
+                        Icon(Icons.photo_library,
+                            size: 40, color: Colors.lightBlue),
                         Text("Choose"),
                       ],
                     ),
@@ -292,7 +297,7 @@ class _ChatlistState extends State<Chatlist> {
                           borderRadius: BorderRadius.circular(10),
                           child: Image.asset(
                             path,
-               width: MediaQuery.of(context).size.width*0.28,
+                            width: MediaQuery.of(context).size.width * 0.28,
                             height: 90,
                             fit: BoxFit.cover,
                           ),
@@ -332,7 +337,7 @@ class _ChatlistState extends State<Chatlist> {
                           borderRadius: BorderRadius.circular(10),
                           child: Image.asset(
                             path,
-                            width: MediaQuery.of(context).size.width*0.28,
+                            width: MediaQuery.of(context).size.width * 0.28,
                             height: 90,
                             fit: BoxFit.cover,
                           ),
@@ -352,17 +357,17 @@ class _ChatlistState extends State<Chatlist> {
                     borderRadius: BorderRadius.circular(20),
                     child: _selectedImagePath!.startsWith("assets/")
                         ? Image.asset(
-                      _selectedImagePath!,
-                      height: 100,
-                      width: MediaQuery.of(context).size.width*0.28,
-                      fit: BoxFit.cover,
-                    )
+                            _selectedImagePath!,
+                            height: 100,
+                            width: MediaQuery.of(context).size.width * 0.28,
+                            fit: BoxFit.cover,
+                          )
                         : Image.file(
-                      File(_selectedImagePath!),
-                      height: 100,
-                      width: MediaQuery.of(context).size.width*0.28,
-                      fit: BoxFit.cover,
-                    ),
+                            File(_selectedImagePath!),
+                            height: 100,
+                            width: MediaQuery.of(context).size.width * 0.28,
+                            fit: BoxFit.cover,
+                          ),
                   ),
                 ),
 
@@ -400,7 +405,8 @@ class _ChatlistState extends State<Chatlist> {
             color: Colors.grey[600],
           ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
         style: GoogleFonts.roboto(
           fontSize: 14,
@@ -416,27 +422,35 @@ class _ChatlistState extends State<Chatlist> {
       padding: const EdgeInsets.all(8.0),
       child: Row(
         children: [
-          Expanded(child: _buildGenderButton('Male', isSelected: _selectedGender == 'Male')),
-          const SizedBox(width: 12),
-          Expanded(child: _buildGenderButton('Female', isSelected: _selectedGender == 'Female')),
+          Expanded(
+              child: _buildGenderButton('Male',
+                  isSelected: _selectedGender == 'Male')),
           const SizedBox(width: 12),
           Expanded(
-            child: _buildGenderButton('Other', isSelected: _selectedGender == 'Other',),
+              child: _buildGenderButton('Female',
+                  isSelected: _selectedGender == 'Female')),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildGenderButton(
+              'Other',
+              isSelected: _selectedGender == 'Other',
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGenderButton(String label, {required bool isSelected, bool hasLock = false}) {
+  Widget _buildGenderButton(String label,
+      {required bool isSelected, bool hasLock = false}) {
     return GestureDetector(
       onTap: hasLock
           ? null
           : () {
-        setState(() {
-          _selectedGender = label;
-        });
-      },
+              setState(() {
+                _selectedGender = label;
+              });
+            },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
         decoration: BoxDecoration(
@@ -468,11 +482,16 @@ class _ChatlistState extends State<Chatlist> {
       padding: const EdgeInsets.all(8.0),
       child: Row(
         children: [
-          Expanded(child: _buildAgeButton('Young', isSelected: _selectedAge == 'Young')),
+          Expanded(
+              child: _buildAgeButton('Young',
+                  isSelected: _selectedAge == 'Young')),
           const SizedBox(width: 12),
-          Expanded(child: _buildAgeButton('Adult', isSelected: _selectedAge == 'Adult')),
+          Expanded(
+              child: _buildAgeButton('Adult',
+                  isSelected: _selectedAge == 'Adult')),
           const SizedBox(width: 12),
-          Expanded(child: _buildAgeButton('Old', isSelected: _selectedAge == 'Old')),
+          Expanded(
+              child: _buildAgeButton('Old', isSelected: _selectedAge == 'Old')),
         ],
       ),
     );

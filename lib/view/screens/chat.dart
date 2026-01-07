@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:spokiai/view/screens/socket.dart';
+import 'package:translator/translator.dart';
 import '../utils/colors.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -24,20 +25,72 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isListening = false;
   bool _speechInitialized = false;
   bool _isSpeaking = false;
+  final TextEditingController _textController = TextEditingController();
 
   String _currentTranscription = '';
-  String? _currentlySpeakingText; // Tracks which message is being spoken
+  final GoogleTranslator _translator = GoogleTranslator();
+  String? _currentlySpeakingText;
 
   List<ChatMessage> _messages = [];
 
   late SocketService socketService;
 
+
+  String _getLocaleFromPartnerLanguage(String partnerLang) {
+    String lower = partnerLang.toLowerCase().trim();
+    switch (lower) {
+      case "chinese":
+        return "zh-CN";
+      case "arabic":
+        return "ar-SA";
+      case "french":
+        return "fr-FR";
+      case "german":
+        return "de-DE";
+      case "indonesian":
+        return "id-ID";
+      case "italian":
+        return "it-IT";
+      case "japanese":
+        return "ja-JP";
+      case "korean":
+        return "ko-KR";
+      case "russian":
+        return "ru-RU";
+      case "spanish":
+        return "es-ES";
+      case "thai":
+        return "th-TH";
+      case "turkish":
+        return "tr-TR";
+      case "vietnamese":
+        return "vi-VN";
+      case "persian":
+        return "fa-IR";
+      case "hindi":
+        return "hi-IN";
+      case "telugu":
+        return "te-IN";
+      case "tamil":
+        return "ta-IN";
+      case "malayalam":
+        return "ml-IN";
+      case "kannada":
+        return "kn-IN";
+      case "bengali":
+        return "bn-IN";
+      case "english":
+      case "international":
+      default:
+        return "en-US";
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
-    print("partnerDetails");
-    print(widget.partnerDetails);
+    print("partnerDetails: ${widget.partnerDetails}");
 
     socketService = SocketService();
     socketService.initSocket();
@@ -54,7 +107,6 @@ class _ChatScreenState extends State<ChatScreen> {
       String? messageText = data['message'];
 
       if (messageText == null || messageText.trim().isEmpty) return;
-
       if (!mounted) return;
 
       setState(() {
@@ -69,8 +121,7 @@ class _ChatScreenState extends State<ChatScreen> {
             isUser: false,
             hasAudio: true,
           ));
-          // Auto-speak new AI message
-          _speak(messageText.trim());
+          _speak(messageText.trim()); // Auto-speak in partner's language
         }
       });
 
@@ -78,79 +129,209 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Future<void> _showTranslationDialog(String englishText) async {
+    if (englishText.trim().isEmpty || !mounted) return;
+
+    String partnerLanguageName = widget.partnerDetails["language"] ?? "English";
+    String targetCode = _getLocaleFromPartnerLanguage(partnerLanguageName);
+
+    // If it's already English, just show original
+    if (targetCode == "en-US") {
+      _showSimpleTranslationDialog(partnerLanguageName, englishText);
+      return;
+    }
+
+    // Show loading dialog first
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final translation = await _translator.translate(englishText.trim(), to: targetCode.split('-').first);
+      String translatedText = translation.text;
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading
+
+      _showSimpleTranslationDialog(partnerLanguageName, translatedText, original: englishText);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Translation failed. Check internet connection.")),
+      );
+    }
+  }
+
+  Future<void> _showSimpleTranslationDialog(
+      String languageName,
+      String translatedText, {
+        String? original,
+      }) async {
+    // Track if we're speaking from this dialog
+    bool isSpeakingFromDialog = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Icon(Icons.translate, color: appColor),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      "Translated to $languageName",
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      "Translation:",
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      translatedText,
+                      style: const TextStyle(fontSize: 17, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    // Stop speaking if playing from dialog
+                    if (isSpeakingFromDialog) {
+                      _flutterTts.stop();
+                      // Restore global speaking state
+                      if (mounted) {
+                        setState(() {
+                          _isSpeaking = false;
+                          _currentlySpeakingText = null;
+                        });
+                      }
+                    }
+                    Navigator.pop(context);
+                  },
+                  child: const Text("Close"),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    if (isSpeakingFromDialog) {
+                      // Stop speaking
+                      await _flutterTts.stop();
+                      setDialogState(() {
+                        isSpeakingFromDialog = false;
+                      });
+                      if (mounted) {
+                        setState(() {
+                          _isSpeaking = false;
+                          _currentlySpeakingText = null;
+                        });
+                      }
+                    } else {
+                      // Start speaking
+                      await _flutterTts.stop(); // Stop any previous speech
+                      String targetCode = _getLocaleFromPartnerLanguage(languageName);
+
+                      await _flutterTts.setLanguage(targetCode);
+
+                      // Update global state so other "Stop" buttons reflect correctly
+                      if (mounted) {
+                        setState(() {
+                          _isSpeaking = true;
+                          _currentlySpeakingText = translatedText; // Important!
+                        });
+                      }
+
+                      setDialogState(() {
+                        isSpeakingFromDialog = true;
+                      });
+
+                      await _flutterTts.speak(translatedText);
+
+                      // When speech ends naturally
+                      _flutterTts.setCompletionHandler(() {
+                        if (mounted) {
+                          setState(() {
+                            _isSpeaking = false;
+                            _currentlySpeakingText = null;
+                          });
+                        }
+                        isSpeakingFromDialog = false;
+                      });
+                    }
+                  },
+                  icon: Icon(
+                    isSpeakingFromDialog ? Icons.stop : Icons.volume_up,
+                    size: 18,
+                  ),
+                  label: Text(isSpeakingFromDialog ? "Stop" : "Speak"),
+                  style: ElevatedButton.styleFrom(backgroundColor: appColor),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((_) {
+      // This runs when dialog is dismissed (by Close or back button)
+      if (isSpeakingFromDialog) {
+        _flutterTts.stop();
+        if (mounted) {
+          setState(() {
+            _isSpeaking = false;
+            _currentlySpeakingText = null;
+          });
+        }
+      }
+    });
+  }
   Future<void> _initializeTts() async {
     await _flutterTts.setVolume(1.0);
 
-    String gender = (widget.partnerDetails["gender"] ?? "Other").toString().toLowerCase();
-    String age = (widget.partnerDetails["age"] ?? "Adult").toString().toLowerCase();
+    String partnerLanguage = widget.partnerDetails["language"] ?? "English";
+    String languageCode = _getLocaleFromPartnerLanguage(partnerLanguage);
 
-    print("Configuring TTS: Gender=$gender, Age=$age");
+    await _flutterTts.setLanguage(languageCode);
+    print("TTS Language set to: $languageCode ($partnerLanguage)");
 
+    // Pitch & Rate based on gender/age (keep your existing logic)
     double pitch = 1.0;
     double rate = 0.5;
-
-    if (age == "old") {
-      rate = 0.35; // Very slow for elderly
-      if (gender == "male") {
-        pitch = 0.6; // Very deep male
-      } else if (gender == "female") {
-        pitch = 0.9; // Lower but feminine
-      } else {
-        pitch = 0.75;
-      }
-    } else if (age == "young") {
-      rate = 0.65;
-      if (gender == "male") {
-        pitch = 1.3;
-      } else if (gender == "female") {
-        pitch = 1.6;
-      } else {
-        pitch = 1.4;
-      }
-    } else {
-      // Adult
-      rate = 0.5;
-      if (gender == "male") {
-        pitch = 0.9;
-      } else if (gender == "female") {
-        pitch = 1.2;
-      } else {
-        pitch = 1.0;
-      }
-    }
-
     await _flutterTts.setPitch(pitch);
     await _flutterTts.setSpeechRate(rate);
 
-    print("Applied: Pitch=$pitch, Rate=$rate");
-
+    // Try to select best voice for partner's language
     List<dynamic> voices = await _flutterTts.getVoices;
-    print("Available voices count: ${voices.length}");
-
-    // Try mature voices for old age
-    if (age == "old") {
-      List<String> oldVoices = ["en-us-x-tpd-local", "en-gb-x-fis-local"];
-      for (String name in oldVoices) {
-        bool found = false;
-        for (var voice in voices) {
-          if (voice is Map && voice["name"]?.toString() == name) {
-            Map<String, String> voiceMap = {
+    if (voices.isNotEmpty) {
+      for (var voice in voices) {
+        if (voice is Map && voice["locale"] != null) {
+          String locale = voice["locale"].toString();
+          if (locale.startsWith(languageCode.split('-').first)) {
+            await _flutterTts.setVoice({
               "name": voice["name"].toString(),
-              "locale": voice["locale"]?.toString() ?? "en-US",
-            };
-            await _flutterTts.setVoice(voiceMap);
-            print("Used mature voice: $name");
-            found = true;
+              "locale": locale,
+            });
+            print("Selected voice: ${voice["name"]}");
             break;
           }
         }
-        if (found) break;
       }
-    }
-
-    if (voices.isEmpty) {
-      await _flutterTts.setLanguage("en-US");
-      print("Using default voice with pitch/rate adjustments");
     }
 
     _flutterTts.setCompletionHandler(() {
@@ -175,15 +356,106 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _speak(String text) async {
     if (text.trim().isEmpty || !mounted) return;
+    await _flutterTts.stop();
+    setState(() {
+      _isSpeaking = true;
+      _currentlySpeakingText = text.trim();
+    });
+    await _flutterTts.speak(text);
+  }
+
+  Future<void> _speakInEnglish(String text) async {
+    if (text.trim().isEmpty || !mounted) return;
 
     await _flutterTts.stop();
+
+    // String partnerCode = _getLocaleFromPartnerLanguage(widget.partnerDetails["language"] ?? "English");
+    String partnerCode = "english";
 
     setState(() {
       _isSpeaking = true;
       _currentlySpeakingText = text.trim();
     });
 
-    await _flutterTts.speak(text);
+    await _flutterTts.setLanguage("en-US");
+
+    // Optional: pick best English voice
+    List<dynamic> voices = await _flutterTts.getVoices;
+    if (voices.isNotEmpty) {
+      for (var voice in voices) {
+        if (voice is Map && voice["locale"]?.toString().startsWith("en") == true) {
+          await _flutterTts.setVoice({
+            "name": voice["name"].toString(),
+            "locale": voice["locale"].toString(),
+          });
+          break;
+        }
+      }
+    }
+
+    await _flutterTts.speak(text.trim());
+
+    // Restore partner's language
+    await _flutterTts.setLanguage(partnerCode);
+  }
+
+
+  Future<void> _translateToPartnerLanguageAndSpeak(String englishText) async {
+    if (englishText.trim().isEmpty || !mounted) return;
+
+    setState(() {
+      _isSpeaking = true;
+      _currentlySpeakingText = englishText.trim();
+    });
+
+    await _flutterTts.stop();
+
+    String partnerLanguageName = widget.partnerDetails["language"] ?? "English";
+    String targetCode = _getLocaleFromPartnerLanguage(partnerLanguageName);
+
+    // If partner language is English, just speak in English
+    if (targetCode == "en-US") {
+      await _flutterTts.setLanguage("en-US");
+      await _flutterTts.speak(englishText.trim());
+      return;
+    }
+
+    try {
+      // Translate English → Partner's language
+      var translation = await _translator.translate(englishText.trim(), to: targetCode.split('-').first);
+
+      String translatedText = translation.text;
+
+      // Set TTS to partner's language
+      await _flutterTts.setLanguage(targetCode);
+
+      // Optional: Select best voice for target language
+      List<dynamic> voices = await _flutterTts.getVoices;
+      if (voices.isNotEmpty) {
+        for (var voice in voices) {
+          if (voice is Map && voice["locale"] != null) {
+            String locale = voice["locale"].toString();
+            if (locale.startsWith(targetCode.split('-').first)) {
+              await _flutterTts.setVoice({
+                "name": voice["name"].toString(),
+                "locale": locale,
+              });
+              break;
+            }
+          }
+        }
+      }
+
+      // Speak the translated text
+      await _flutterTts.speak(translatedText);
+    } catch (e) {
+      print("Translation failed: $e");
+      // Fallback: speak original in partner's voice (pronunciation only)
+      await _flutterTts.setLanguage(targetCode);
+      await _flutterTts.speak(englishText.trim());
+    }
+
+    // Restore original TTS settings if needed (optional)
   }
 
   Future<void> _stopSpeaking() async {
@@ -202,7 +474,6 @@ class _ChatScreenState extends State<ChatScreen> {
       onStatus: (status) => print('Speech status: $status'),
       onError: (error) => print('Speech error: ${error.errorMsg}'),
     );
-
     if (mounted) setState(() => _speechInitialized = available);
   }
 
@@ -231,11 +502,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _stopListening() {
     if (!_isListening) return;
-
     _speech.stop();
 
     final String userText = _currentTranscription.trim();
-
     if (userText.isNotEmpty) {
       SocketService().sendMessage(userText);
     }
@@ -261,6 +530,15 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _sendTextMessage() {
+    final String text = _textController.text.trim();
+    if (text.isEmpty) return;
+
+    SocketService().sendMessage(text);
+    _textController.clear();
+    _scrollToBottom();
+  }
+
   @override
   void dispose() {
     socketService.socket.off('message');
@@ -282,7 +560,6 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Partner Photo
             CircleAvatar(
               radius: 18,
               backgroundColor: appColor,
@@ -302,7 +579,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   : null,
             ),
             const SizedBox(width: 12),
-            // Partner Name
             Text(
               "${widget.partnerDetails["name"] ?? ""} AI Partner",
               style: const TextStyle(
@@ -373,34 +649,63 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
 
           Padding(
-            padding: EdgeInsets.only(
-              bottom: _isListening ? 20 : 40,
-              top: 10,
-            ),
-            child: GestureDetector(
-              onTapDown: (_) => _startListening(),
-              onTapUp: (_) => _stopListening(),
-              onTapCancel: _stopListening,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: _isListening ? Colors.redAccent : appColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: (_isListening ? Colors.redAccent : appColor).withOpacity(0.6),
-                      blurRadius: _isListening ? 50 : 25,
-                      spreadRadius: _isListening ? 12 : 6,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _textController,
+                      minLines: 1,
+                      maxLines: 5,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (value) => _sendTextMessage(),
+                      decoration: const InputDecoration(
+                        hintText: "Type a message...",
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      style: const TextStyle(fontSize: 16),
                     ),
-                  ],
-                ),
-                child: Icon(
-                  _isListening ? Icons.mic : Icons.mic_none,
-                  color: Colors.white,
-                  size: 30,
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_textController.text.trim().isEmpty)
+                    GestureDetector(
+                      onTapDown: (_) => _startListening(),
+                      onTapUp: (_) => _stopListening(),
+                      onTapCancel: _stopListening,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _isListening ? Colors.redAccent : appColor,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_isListening ? Colors.redAccent : appColor).withOpacity(0.4),
+                              blurRadius: _isListening ? 30 : 15,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  if (_textController.text.trim().isNotEmpty)
+                    IconButton(
+                      icon: Icon(Icons.send, color: appColor),
+                      onPressed: _sendTextMessage,
+                    ),
+                ],
               ),
             ),
           ),
@@ -446,38 +751,104 @@ class _ChatScreenState extends State<ChatScreen> {
                         : null,
                   ),
                   const SizedBox(width: 12),
+
+                  // Listen in English
                   GestureDetector(
                     onTap: () {
                       if (isThisMessageSpeaking) {
                         _stopSpeaking();
                       } else {
-                        _speak(message.text);
+                        _speakInEnglish(message.text);
                       }
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: isThisMessageSpeaking ? Colors.red[50] : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(
-                          color: isThisMessageSpeaking ? Colors.red : Colors.transparent,
-                        ),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             isThisMessageSpeaking ? Icons.stop : Icons.volume_up,
-                            size: 20,
+                            size: 18,
                             color: isThisMessageSpeaking ? Colors.red : Colors.grey[700],
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Text(
                             isThisMessageSpeaking ? "Stop" : "Listen",
-                            style: GoogleFonts.roboto(
-                              fontSize: 14,
+                            style: const TextStyle(fontSize: 13, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  // Translate & Speak (opens dialog)
+                  // GestureDetector(
+                  //   onTap: () async {
+                  //     if (isThisMessageSpeaking) {
+                  //       await _stopSpeaking();
+                  //     } else {
+                  //       await _translateToPartnerLanguageAndSpeak(message.text);
+                  //     }
+                  //   },
+                  //   child: Container(
+                  //     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  //     decoration: BoxDecoration(
+                  //       color: isThisMessageSpeaking ? Colors.blue[50] : appColor.withOpacity(0.2),
+                  //       borderRadius: BorderRadius.circular(20),
+                  //       border: Border.all(color: appColor.withOpacity(0.4)),
+                  //     ),
+                  //     child: Row(
+                  //       mainAxisSize: MainAxisSize.min,
+                  //       children: [
+                  //         Icon(Icons.translate, size: 18, color: appColor),
+                  //         const SizedBox(width: 6),
+                  //         Text(
+                  //           // isThisMessageSpeaking ? "Stop" : "Translate in ${widget.partnerDetails["language"] ?? "Language"}",
+                  //           isThisMessageSpeaking ? "Translate" : "Translate",
+                  //           style: TextStyle(
+                  //             fontSize: 13,
+                  //             fontWeight: FontWeight.w600,
+                  //             color: appColor,
+                  //           ),
+                  //         ),
+                  //       ],
+                  //     ),
+                  //   ),
+                  // ),
+
+                  GestureDetector(
+                    onTap: () async {
+                      if (isThisMessageSpeaking) {
+                        await _stopSpeaking();
+                      } else {
+                        // Open dialog showing translation in partner's language
+                        await _showTranslationDialog(message.text);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isThisMessageSpeaking ? Colors.blue[50] : appColor.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: appColor.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.translate, size: 18, color: appColor),
+                          const SizedBox(width: 6),
+                          Text(
+                            isThisMessageSpeaking ? "Stop" : "Translate",
+                            style: TextStyle(
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: isThisMessageSpeaking ? Colors.red : Colors.grey[700],
+                              color: appColor,
                             ),
                           ),
                         ],
