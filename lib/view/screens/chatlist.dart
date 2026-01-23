@@ -24,9 +24,9 @@ class _ChatlistState extends State<Chatlist> {
 
   // Predefined images (replace with your actual asset paths)
   final List<String> boyImages = [
-    "assets/images/boy1.jpeg",
-    "assets/images/boy2.jpeg",
-    "assets/images/boy3.jpeg",
+    "assets/images/boy1.png",
+    "assets/images/boy2.png",
+    "assets/images/boy3.png",
   ];
   String? _selectedLanguage;
 
@@ -54,9 +54,9 @@ class _ChatlistState extends State<Chatlist> {
   ];
 
   final List<String> girlImages = [
-    "assets/images/girl1.jpeg",
-    "assets/images/girl2.jpeg",
-    "assets/images/girl3.jpeg",
+    "assets/images/girl1.png",
+    "assets/images/girl2.png",
+    "assets/images/girl3.png",
   ];
 
   Future<void> pickImageFromGallery() async {
@@ -105,7 +105,7 @@ class _ChatlistState extends State<Chatlist> {
                     Map<String, dynamic> partnerDetails = {
                       "name": nameController.text.trim(),
                       "gender": _selectedGender,
-                      "age": _selectedAge,
+                      // "age": _selectedAge,
                       "language": _selectedLanguage.toString().toLowerCase(),
                       "photo": _selectedImagePath,
                       // Can be asset path or file path
@@ -186,14 +186,14 @@ class _ChatlistState extends State<Chatlist> {
 
               const SizedBox(height: 20),
 
-              const Text(
-                "Age Stage",
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              _buildAgeSelection(),
-
-              const SizedBox(height: 20),
+              // const Text(
+              //   "Age Stage",
+              //   style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              // ),
+              // const SizedBox(height: 10),
+              // _buildAgeSelection(),
+              //
+              // const SizedBox(height: 20),
 
               const Text(
                 "Language",
@@ -429,13 +429,13 @@ class _ChatlistState extends State<Chatlist> {
           Expanded(
               child: _buildGenderButton('Female',
                   isSelected: _selectedGender == 'Female')),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildGenderButton(
-              'Other',
-              isSelected: _selectedGender == 'Other',
-            ),
-          ),
+          // const SizedBox(width: 12),
+          // Expanded(
+          //   child: _buildGenderButton(
+          //     'Other',
+          //     isSelected: _selectedGender == 'Other',
+          //   ),
+          // ),
         ],
       ),
     );

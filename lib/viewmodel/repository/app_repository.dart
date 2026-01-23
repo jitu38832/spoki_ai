@@ -17,6 +17,7 @@ import 'package:spokiai/model/wordmeaning.dart';
 import 'package:spokiai/viewmodel/repository/response_status.dart';
 
 
+import '../../model/privacypolicy.dart';
 import 'api_service.dart';
 
 class AppRepository {
@@ -60,12 +61,12 @@ class AppRepository {
     try {
       final response = await ApiService()
           .sendRequest
-          .get("contents/type/${type}", data: {
+          .get("contents/${type}", data: {
       });
 
       return ResponseData(
           statusCode: response.statusCode,
-          response: GoogleLoginResponse.fromJson(response.data));
+          response: PrivacyPolicyResponse.fromJson(response.data));
     } on DioException catch (e) {
       throw ErrorData(
           message: e.response!.data['error'], code: e.response!.statusCode);

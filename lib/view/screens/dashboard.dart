@@ -7,7 +7,9 @@ import 'home.dart';
 import 'chat.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final int? initialTabIndex; // ✅ Added to select specific tab
+
+  const DashboardScreen({super.key, this.initialTabIndex = 0});
 
   @override
   _DashboardScreenState createState() => _DashboardScreenState();
@@ -19,8 +21,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final List<Widget> _screens = [
     const HomeScreen(),
     const StoryHistoryScreen(),
-    const Chatlist(), // Using ChatScreen for Setting for now
+    const Chatlist(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialTabIndex != null) {
+      _selectedIndex = widget.initialTabIndex!;
+    }
+  }
 
   void _onItemTapped(int index) {
     setState(() {

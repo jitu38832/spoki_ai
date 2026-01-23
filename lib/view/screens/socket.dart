@@ -6,71 +6,95 @@ class SocketService {
   SocketService._internal();
 
   late IO.Socket socket;
-
   bool get isConnected => socket.connected;
+
+  // Flag to prevent multiple initial messages
+  bool _hasSentInitialGreeting = false;
+
+  // ── Private helper method ── (declared BEFORE it's used)
+  void _sendInitialGreeting({
+    required String botName,
+    required String gender,
+  }) {
+    final safeGender = gender.toLowerCase() == "female" ? "female" : "male";
+    final greeting = "hi,botname=$botName,gender=$safeGender";
+
+    socket.emit('sendMessage', {"message": greeting});
+    print('📤 Auto-sent initial greeting: $greeting');
+  }
+
+  // Public method to be called from ChatScreen with real partner data
+  void sendInitialGreetingWithPartnerDetails(Map<String, dynamic> partnerDetails) {
+    final botName = "jarvis"; // you can make this dynamic later if needed
+    final gender = (partnerDetails["gender"] ?? "male").toString().toLowerCase();
+
+    _sendInitialGreeting(
+      botName: botName,
+      gender: gender,
+    );
+  }
 
   void initSocket() {
     socket = IO.io(
-      'ws://13.109.110.211', // Base URL (http for handshake, upgrades to ws)
+      'ws://3.109.110.211',
+      // 'ws://13.127.143.122:9799',
       IO.OptionBuilder()
-          .setTransports(['websocket']) // Force websocket only (best for Flutter)
-          .enableAutoConnect()          // Auto connect on creation
-          .setReconnectionAttempts(9999)// Unlimited retries
-          .setReconnectionDelay(1000)   // Start with 1s delay
-          .setReconnectionDelayMax(5000)// Max 5s between retries
-          .setTimeout(10000)            // Connection timeout
+          .setTransports(['websocket'])
+          .enableAutoConnect()
+          .setReconnectionAttempts(9999)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(5000)
+          .setTimeout(10000)
           .build(),
     );
 
-    // Connection events
     socket.onConnect((_) {
-      print('✅ Connected to socket server');
+      print('✅ SOCKET CONNECTED');
+
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (socket.connected && !_hasSentInitialGreeting) {
+          // Default fallback greeting (in case partnerDetails not available yet)
+          _sendInitialGreeting(
+            botName: "jarvis",
+            gender: "male", // ← safe default
+          );
+          _hasSentInitialGreeting = true;
+        }
+      });
     });
 
-    socket.onConnectError((data) {
-      print('❌ Connect error: $data');
-    });
+    // Important: This is where you should call the real gender version
+    // → But only AFTER connection (see ChatScreen below)
 
-    socket.onError((data) {
-      print('❌ Socket error: $data');
-    });
-
-    socket.onDisconnect((_) {
-      print('🔌 Disconnected from server');
-    });
-
+    socket.onConnectError((err) => print('❌ Connect error: $err'));
+    socket.onError((err) => print('❌ Socket error: $err'));
+    socket.onDisconnect((_) => print('🔌 Disconnected'));
     socket.onReconnect((attempt) {
-      print('🔄 Reconnected after $attempt attempt(s)');
+      print('🔄 Reconnected after $attempt attempts');
+      _hasSentInitialGreeting = false; // reset flag on reconnect
     });
 
-    socket.onReconnectAttempt((attempt) {
-      print('🔄 Reconnect attempt #$attempt');
-    });
-
-    // Listen for incoming messages from server
     socket.on('message', (data) {
-      print('📩 Received message: $data');
-      // You can notify listeners here (e.g., using streams or callbacks)
-      // For now, we'll handle it in the ChatScreen directly
+      print('📩 Received (global): $data');
     });
   }
 
-  /// Send user message to server
   void sendMessage(String text) {
     if (!isConnected) {
-      print('⚠️ Cannot send message: Socket not connected');
+      print('⚠️ Not connected - cannot send');
       return;
     }
-
-    final payload = {"message": text};
+    final payload = {"message": text.trim()};
     socket.emit('sendMessage', payload);
-    print('📤 Sent message: $payload');
+    print('📤 Sent: $payload');
   }
 
-  /// Disconnect and clean up
-  void disconnect() {
+  void resetInitialFlag() {
+    _hasSentInitialGreeting = false;
+  }
+
+  void dispose() {
     socket.disconnect();
     socket.dispose();
-    print('🔌 Socket disconnected and disposed');
   }
 }

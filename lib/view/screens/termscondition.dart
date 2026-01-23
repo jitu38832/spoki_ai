@@ -6,19 +6,19 @@ import 'package:spokiai/view/utils/custom_widgets.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import 'package:spokiai/viewmodel/cubit/appcubit.dart';
 
-class PrivacyPolicyScreen extends StatefulWidget {
-  const PrivacyPolicyScreen({super.key});
+class TermsConditionScreen extends StatefulWidget {
+  const TermsConditionScreen({super.key});
 
   @override
-  State<PrivacyPolicyScreen> createState() => _PrivacyPolicyScreenState();
+  State<TermsConditionScreen> createState() => _TermsConditionScreenState();
 }
 
-class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
+class _TermsConditionScreenState extends State<TermsConditionScreen> {
   String policyContent = '';
 
   @override
   void initState() {
-    BlocProvider.of<AppCubit>(context).privacyPolicy("privacy-policy");
+    BlocProvider.of<AppCubit>(context).privacyPolicy("terms-and-conditions");
     super.initState();
   }
 
@@ -33,7 +33,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
           },
         ),
         title: const Text(
-          "Privacy Policy",
+          "Terms & Condition",
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,

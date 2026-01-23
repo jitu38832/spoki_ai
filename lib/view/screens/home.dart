@@ -10,16 +10,21 @@ import 'package:spokiai/model/homebanner.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
 import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/screens/privacypolicy.dart';
+import 'package:spokiai/view/screens/termscondition.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/custom_widgets.dart';
+import 'dashboard.dart';
 import 'generatestory.dart';
 import 'chat.dart';
+import 'chatlist.dart'; // ✅ Added Chatlist import
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int? initialTabIndex; // ✅ Added for tab selection
+
+  const HomeScreen({super.key, this.initialTabIndex});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -37,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<BannerList> bannerList = [];
   int _currentIndex = 0;
   final CarouselSliderController _carouselController =
-      CarouselSliderController();
+  CarouselSliderController();
 
   @override
   void initState() {
@@ -56,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
           listener: (context, state) {
             if (state.status == AppStatus.bannerListSuccess) {
               HomeBannerResponse bannerResponse =
-                  state.responseData?.response as HomeBannerResponse;
+              state.responseData?.response as HomeBannerResponse;
 
               if (bannerResponse.data?.length != 0) {
                 bannerList.addAll(bannerResponse.data ?? []);
@@ -91,7 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) =>
-                                      const GenerateStoryScreen(),
+                                  const GenerateStoryScreen(),
                                 ),
                               );
                             },
@@ -99,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           const SizedBox(height: 32),
 
-                          // Step 2: Converse & Practice
+                          // Step 2: Converse & Practice ✅ FIXED - Go to Dashboard with Chat tab selected
                           _buildStepSection(
                             stepNumber: "Step 2:",
                             title: "Converse & Practice",
@@ -107,12 +112,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             icon: Icons.star,
                             gradientColors: [appColor, appColor],
                             onTap: () {
-                              // Navigator.push(
-                              //   context,
-                              //   MaterialPageRoute(
-                              //     builder: (context) => const ChatScreen(),
-                              //   ),
-                              // );
+                              Navigator.pushReplacement( // ✅ Use pushReplacement to replace current screen
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => DashboardScreen(
+                                    initialTabIndex: 2,
+                                  ),
+                                ),
+                              );
                             },
                           ),
                         ],
@@ -177,12 +184,16 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 20),
 
           SizedBox(
-            height: MediaQuery.of(context).size.height * 0.2,
+            height: MediaQuery.of(context).size.height * 0.24,
             child: bannerList.isEmpty
                 ? const Center(child: CircularProgressIndicator())
-                : ClipRRect(
-              borderRadius: BorderRadius.all(Radius.circular(10)),
-                  child: CarouselSlider.builder(
+                : Column(
+              children: [
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.2,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.all(Radius.circular(10)),
+                    child: CarouselSlider.builder(
                       carouselController: _carouselController,
                       itemCount: bannerList.length,
                       itemBuilder: (context, index, realIndex) {
@@ -190,13 +201,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           imageUrl: bannerList[index].bannerImage ?? "",
                           width: double.infinity,
                           fit: BoxFit.cover,
-
-                          // ✅ Center loader
                           placeholder: (context, url) => const Center(
                             child: CircularProgressIndicator(),
                           ),
-
-                          // ✅ Error image
                           errorWidget: (context, url, error) => Image.asset(
                             "assets/images/iv_banner.jpeg",
                             fit: BoxFit.cover,
@@ -207,27 +214,47 @@ class _HomeScreenState extends State<HomeScreen> {
                       options: CarouselOptions(
                         height: double.infinity,
                         viewportFraction: 1.0,
-
-                        // ✅ Auto scroll only if more than 1 banner
                         autoPlay: bannerList.length > 1,
                         enableInfiniteScroll: bannerList.length > 1,
-
                         autoPlayInterval: const Duration(seconds: 3),
                         onPageChanged: (index, reason) {
                           setState(() => _currentIndex = index);
                         },
                       ),
                     ),
+                  ),
                 ),
-          )
+                SizedBox(
+                  height: 10,
+                ),
 
-          // // Banner Image
-          // Image.asset(
-          //   "assets/images/iv_banner.jpeg",
-          //   height: MediaQuery.of(context).size.height * 0.28,
-          //   width: double.infinity,
-          //   fit: BoxFit.cover,
-          // ),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: bannerList.asMap().entries.map((entry) {
+                    return GestureDetector(
+                      onTap: () => _carouselController.animateToPage(entry.key),
+                      child: Container(
+                        width: 10.0,
+                        height: 10.0,
+                        margin: const EdgeInsets.symmetric(horizontal: 5.0),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _currentIndex == entry.key
+                              ? appColor // Active dot color
+                              : Colors.grey.withOpacity(0.7),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.4),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -300,7 +327,22 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.info_outline, size: 26),
               title: const Text("Terms & Conditions"),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) {
+                    return TermsConditionScreen();
+                  },
+                ));
+                // Navigator.pop(context);
+                // Navigate to Terms Page
+              },
+            ),
+
+            ListTile(
+              leading: const Icon(Icons.share, size: 26),
+              title: const Text("Share"),
+              onTap: () {
+                showToast(context: context, message: "Coming soon");
+            Navigator.pop(context);
                 // Navigate to Terms Page
               },
             ),
@@ -323,8 +365,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       actions: [
                         TextButton(
                           child: const Text("Cancel"),
-                          onPressed: () =>
-                              Navigator.pop(context), // close dialog
+                          onPressed: () => Navigator.pop(context), // close dialog
                         ),
                         TextButton(
                           child: const Text(
@@ -338,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               MaterialPageRoute(
                                 builder: (context) => LoginScreen(),
                               ),
-                              (route) => false,
+                                  (route) => false,
                             );
                           },
                         ),

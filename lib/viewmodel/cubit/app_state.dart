@@ -63,6 +63,10 @@ enum AppStatus {
   quizHistoryError,
   quizHistorySuccess,
 
+  privacyPolicyLoading,
+  privacyPolicyError,
+  privacyPolicySuccess,
+
 
 
 

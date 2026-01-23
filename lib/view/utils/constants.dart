@@ -17,7 +17,6 @@ final RegExp emailRegex = RegExp(
 );
 
 
-// const BASEURL = 'https://cc156525ff8e.ngrok-free.app/api/v1/';
+// const BASEURL = 'http://13.127.143.122:9799/api/v1/';
 const BASEURL = 'http://3.109.110.211/api/v1/';
-// const BASEURL = 'http://3.109.110.211:9799/api/v1/';
 

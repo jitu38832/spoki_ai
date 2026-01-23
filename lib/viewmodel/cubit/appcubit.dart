@@ -46,18 +46,24 @@ class AppCubit extends Cubit<AppStates> {
   }
 
   Future<void> privacyPolicy(String type) async {
-    emit(state.copyWith(status: AppStatus.loginLoading));
+    emit(state.copyWith(status: AppStatus.privacyPolicyLoading));
     try {
       ResponseData response = await repository.privacyPolicy(type);
       emit(state.copyWith(
-          status: AppStatus.loginSuccess, responseData: response));
+          status: AppStatus.privacyPolicySuccess, responseData: response));
     } on ErrorData catch (errorStatus) {
       emit(
         state.copyWith(
-          status: AppStatus.loginError,
+          status: AppStatus.privacyPolicyError,
           error: errorStatus.toString(),
         ),
       );
+    }
+    catch (e) {
+      emit(state.copyWith(
+          status: AppStatus.privacyPolicyError,
+          error: e.toString(),
+          errorData: null));
     }
   }
 

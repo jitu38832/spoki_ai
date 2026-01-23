@@ -5,20 +5,20 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:socket_io_client/socket_io_client.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:spokiai/view/screens/socket.dart'; // Adjust path if needed
+import 'package:spokiai/view/screens/socket.dart';
 import 'package:translator/translator.dart';
-import '../utils/colors.dart'; // Make sure appColor is defined
+import '../utils/colors.dart';
 
-class ChatScreen extends StatefulWidget {
+class ChatWithVoiceChangeScreen extends StatefulWidget {
   final Map<String, dynamic> partnerDetails;
 
-  const ChatScreen({super.key, required this.partnerDetails});
+  const ChatWithVoiceChangeScreen({super.key, required this.partnerDetails});
 
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  State<ChatWithVoiceChangeScreen> createState() => _ChatWithVoiceChangeScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatWithVoiceChangeScreenState extends State<ChatWithVoiceChangeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final ScrollController _scrollController = ScrollController();
   late FlutterTts _flutterTts;
@@ -28,6 +28,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isFirstAiMessageReceived = false;
   bool _isSpeaking = false;
   final TextEditingController _textController = TextEditingController();
+  final String _initMessage = "hi,botname=jarvis,gender=male";
 
   String _currentTranscription = '';
   final GoogleTranslator _translator = GoogleTranslator();
@@ -37,36 +38,54 @@ class _ChatScreenState extends State<ChatScreen> {
 
   late SocketService socketService;
 
-  bool _showSuggestions = false;
-  bool _isBulbActive = false;
-  String? _lastAiMessage;
 
   String _getLocaleFromPartnerLanguage(String partnerLang) {
     String lower = partnerLang.toLowerCase().trim();
     switch (lower) {
-      case "chinese": return "zh-CN";
-      case "arabic": return "ar-SA";
-      case "french": return "fr-FR";
-      case "german": return "de-DE";
-      case "indonesian": return "id-ID";
-      case "italian": return "it-IT";
-      case "japanese": return "ja-JP";
-      case "korean": return "ko-KR";
-      case "russian": return "ru-RU";
-      case "spanish": return "es-ES";
-      case "thai": return "th-TH";
-      case "turkish": return "tr-TR";
-      case "vietnamese": return "vi-VN";
-      case "persian": return "fa-IR";
-      case "hindi": return "hi-IN";
-      case "telugu": return "te-IN";
-      case "tamil": return "ta-IN";
-      case "malayalam": return "ml-IN";
-      case "kannada": return "kn-IN";
-      case "bengali": return "bn-IN";
+      case "chinese":
+        return "zh-CN";
+      case "arabic":
+        return "ar-SA";
+      case "french":
+        return "fr-FR";
+      case "german":
+        return "de-DE";
+      case "indonesian":
+        return "id-ID";
+      case "italian":
+        return "it-IT";
+      case "japanese":
+        return "ja-JP";
+      case "korean":
+        return "ko-KR";
+      case "russian":
+        return "ru-RU";
+      case "spanish":
+        return "es-ES";
+      case "thai":
+        return "th-TH";
+      case "turkish":
+        return "tr-TR";
+      case "vietnamese":
+        return "vi-VN";
+      case "persian":
+        return "fa-IR";
+      case "hindi":
+        return "hi-IN";
+      case "telugu":
+        return "te-IN";
+      case "tamil":
+        return "ta-IN";
+      case "malayalam":
+        return "ml-IN";
+      case "kannada":
+        return "kn-IN";
+      case "bengali":
+        return "bn-IN";
       case "english":
       case "international":
-      default: return "en-US";
+      default:
+        return "en-US";
     }
   }
 
@@ -77,73 +96,43 @@ class _ChatScreenState extends State<ChatScreen> {
     print("partnerDetails: ${widget.partnerDetails}");
 
     socketService = SocketService();
-    socketService.initSocket();
+    socketService.initSocket(); // ← now automatically handles connection + greeting
 
     _flutterTts = FlutterTts();
     _initializeTts();
     _initializeSpeech();
 
-    // Silent initialization
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await Future.delayed(const Duration(milliseconds: 1200));
-      if (!mounted) return;
-      if (socketService.isConnected) {
-        const initMessage = "hi,botname=jarvis,gender=male";
-        socketService.sendMessage(initMessage);
-        print("→ Sent silent init: $initMessage");
-      }
-    });
-
+    // Only keep the message listener + skip logic
     socketService.socket.on('message', (data) {
       print('Received from server: $data');
 
       if (data is! Map) return;
-      final type = data['type'] as String?;
-      final messageText = (data['message'] as String?)?.trim();
+      String? type = data['type'];
+      String? messageText = data['message']?.toString().trim();
 
       if (messageText == null || messageText.isEmpty) return;
       if (!mounted) return;
 
-      // Skip initialization echo
+      // Skip showing our own initial message if echoed back
       if (type == 'user' &&
+          !_isFirstAiMessageReceived &&
           messageText.toLowerCase().contains('botname=jarvis') &&
           messageText.toLowerCase().contains('gender=male')) {
         print("↳ Skipping UI for initialization message");
+        _isFirstAiMessageReceived = true;
         return;
       }
-
-      String? exampleText = (data['example'] as String?)?.trim();
-      if (exampleText != null && exampleText.isEmpty) exampleText = null;
 
       setState(() {
         if (type == 'user') {
           _messages.add(ChatMessage(text: messageText, isUser: true));
         } else if (type == 'ai') {
-          // Skip generic companion welcome
-          if (!_isFirstAiMessageReceived &&
-              messageText.contains("personal AI companion") &&
-              messageText.contains("let’s begin 😊")) {
-            print("↳ Skipping generic companion welcome message");
-            return;
-          }
-
           _messages.add(ChatMessage(
             text: messageText,
             isUser: false,
             hasAudio: true,
-            example: exampleText,
           ));
-          _lastAiMessage = messageText;
-
-          // Auto-speak first real AI message
-          if (!_isFirstAiMessageReceived) {
-            _isFirstAiMessageReceived = true;
-            Future.microtask(() {
-              if (mounted) _speak(messageText);
-            });
-          } else {
-            _speak(messageText);
-          }
+          _speak(messageText);
         }
       });
 
@@ -151,185 +140,38 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _initializeTts() async {
-    await _flutterTts.setVolume(1.0);
-
-    final languageCode = _getLocaleFromPartnerLanguage("English"); // or dynamic
-
-    await _flutterTts.setLanguage(languageCode);
-
-    await _flutterTts.setSpeechRate(0.33);
-    await _flutterTts.setPitch(1.0);
-
-    final voices = await _flutterTts.getVoices;
-
-    if (voices.isNotEmpty) {
-      final genderLower = (widget.partnerDetails["gender"] as String?)
-          ?.toLowerCase()
-          .trim() ??
-          "male";
-
-      print("Trying to select friendly voice for gender: $genderLower");
-
-      bool voiceSet = false;
-      final friendlyVoicePatterns = [
-        // Very natural ones (often WaveNet or Neural voices)
-        "wavenet",
-        "neural",
-        "premium",
-        "enhanced",
-        "studio",
-        "high-quality",
-        // Then gender hints
-        "male",
-        "man",
-        "boy",
-        "david",
-        "tom",
-        "john",
-        "tpd", // often male on Google TTS
-        "female",
-        "woman",
-        "girl",
-        "karen",
-        "samantha",
-        "tpf", // often female
-      ];
-
-      // First try: most natural + gender match
-      for (var pattern in friendlyVoicePatterns) {
-        for (var voice in voices) {
-          if (voice is Map && voice["locale"] != null) {
-            final locale = voice["locale"].toString();
-            final nameLower = (voice["name"] as String?)?.toLowerCase() ?? "";
-
-            if (locale.startsWith(languageCode.split('-').first) &&
-                nameLower.contains(pattern)) {
-              if ((genderLower == "female" && (pattern.contains("female") || pattern.contains("woman") || pattern.contains("girl"))) ||
-                  (genderLower == "male" && (pattern.contains("male") || pattern.contains("man") || pattern.contains("boy")) ||
-                      pattern.contains("wavenet") || pattern.contains("neural"))) {
-                await _flutterTts.setVoice({"name": voice["name"], "locale": locale});
-                print("Selected friendly/natural voice: ${voice["name"]} ($locale)");
-                voiceSet = true;
-                break;
-              }
-            }
-          }
-        }
-        if (voiceSet) break;
-      }
-
-      // Ultimate fallback: any voice in the correct language
-      if (!voiceSet) {
-        for (var voice in voices) {
-          if (voice is Map && voice["locale"] != null) {
-            final locale = voice["locale"].toString();
-            if (locale.startsWith(languageCode.split('-').first)) {
-              await _flutterTts.setVoice({"name": voice["name"], "locale": locale});
-              print("Fallback voice: ${voice["name"]} ($locale)");
-              break;
-            }
-          }
-        }
-      }
-      // Debug: list all voices
-      print("\n=== Available TTS Voices ===");
-      for (var v in voices) {
-        print(" - ${v['name']} | ${v['locale']} | gender?: ${v['gender'] ?? 'unknown'}");
-      }
-      print("===========================\n");
-    } else {
-      print("No TTS voices available on this device");
-    }
-
-    _flutterTts.setCompletionHandler(() {
-      if (mounted) {
-        setState(() {
-          _isSpeaking = false;
-          _currentlySpeakingText = null;
-        });
-      }
-    });
-
-    _flutterTts.setErrorHandler((msg) {
-      print("TTS Error: $msg");
-      if (mounted) {
-        setState(() {
-          _isSpeaking = false;
-          _currentlySpeakingText = null;
-        });
-      }
-    });
-  }
-
-  // ── The rest of your methods remain unchanged ──
-  // ( _speak, _speakInEnglish, _stopSpeaking, _generateSuggestions, etc. )
-
-  List<String> _generateSuggestions() {
-    String? latestExample;
-    for (final msg in _messages.reversed) {
-      if (!msg.isUser && msg.example != null && msg.example!.trim().isNotEmpty) {
-        latestExample = msg.example!.trim();
-        break;
-      }
-    }
-
-    if (latestExample == null || latestExample.isEmpty) {
-      return [
-        "Hi Jarvis, let's start learning!",
-        "Can you teach me present simple tense?",
-        "Please give me an example.",
-        "How do I introduce myself in English?"
-      ];
-    }
-
-    final preview = _shortenForReply(latestExample);
-    return [
-      latestExample
-    ];
-  }
-
-  String _shortenForReply(String example) {
-    final words = example.split(' ');
-    if (words.length <= 8) return example;
-    return words.take(8).join(' ') + '...';
-  }
-
-  void _toggleSuggestions() {
-    setState(() {
-      _showSuggestions = !_showSuggestions;
-      _isBulbActive = _showSuggestions;
-    });
-  }
-
   Future<void> _showTranslationDialog(String englishText) async {
     if (englishText.trim().isEmpty || !mounted) return;
 
-    final partnerLanguageName = widget.partnerDetails["language"] ?? "English";
-    final targetCode = _getLocaleFromPartnerLanguage(partnerLanguageName);
+    String partnerLanguageName = widget.partnerDetails["language"] ?? "English";
+    String targetCode = _getLocaleFromPartnerLanguage(partnerLanguageName);
 
+    // If it's already English, just show original
     if (targetCode == "en-US") {
       _showSimpleTranslationDialog(partnerLanguageName, englishText);
       return;
     }
 
+    // Show loading dialog first
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
     );
 
     try {
       final translation = await _translator.translate(englishText.trim(), to: targetCode.split('-').first);
-      final translatedText = translation.text;
+      String translatedText = translation.text;
 
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context); // Close loading
 
       _showSimpleTranslationDialog(partnerLanguageName, translatedText, original: englishText);
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context); // Close loading
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Translation failed. Check internet connection.")),
       );
@@ -341,6 +183,7 @@ class _ChatScreenState extends State<ChatScreen> {
       String translatedText, {
         String? original,
       }) async {
+    // Track if we're speaking from this dialog
     bool isSpeakingFromDialog = false;
 
     await showDialog(
@@ -367,7 +210,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text("Translation:", style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text(
+                      "Translation:",
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 8),
                     SelectableText(
                       translatedText,
@@ -379,12 +225,16 @@ class _ChatScreenState extends State<ChatScreen> {
               actions: [
                 TextButton(
                   onPressed: () {
-                    if (isSpeakingFromDialog) _flutterTts.stop();
-                    if (mounted) {
-                      setState(() {
-                        _isSpeaking = false;
-                        _currentlySpeakingText = null;
-                      });
+                    // Stop speaking if playing from dialog
+                    if (isSpeakingFromDialog) {
+                      _flutterTts.stop();
+                      // Restore global speaking state
+                      if (mounted) {
+                        setState(() {
+                          _isSpeaking = false;
+                          _currentlySpeakingText = null;
+                        });
+                      }
                     }
                     Navigator.pop(context);
                   },
@@ -393,8 +243,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 ElevatedButton.icon(
                   onPressed: () async {
                     if (isSpeakingFromDialog) {
+                      // Stop speaking
                       await _flutterTts.stop();
-                      setDialogState(() => isSpeakingFromDialog = false);
+                      setDialogState(() {
+                        isSpeakingFromDialog = false;
+                      });
                       if (mounted) {
                         setState(() {
                           _isSpeaking = false;
@@ -402,20 +255,27 @@ class _ChatScreenState extends State<ChatScreen> {
                         });
                       }
                     } else {
-                      await _flutterTts.stop();
-                      final targetCode = _getLocaleFromPartnerLanguage(languageName);
+                      // Start speaking
+                      await _flutterTts.stop(); // Stop any previous speech
+                      String targetCode = _getLocaleFromPartnerLanguage(languageName);
+
                       await _flutterTts.setLanguage(targetCode);
 
+                      // Update global state so other "Stop" buttons reflect correctly
                       if (mounted) {
                         setState(() {
                           _isSpeaking = true;
-                          _currentlySpeakingText = translatedText;
+                          _currentlySpeakingText = translatedText; // Important!
                         });
                       }
 
-                      setDialogState(() => isSpeakingFromDialog = true);
+                      setDialogState(() {
+                        isSpeakingFromDialog = true;
+                      });
+
                       await _flutterTts.speak(translatedText);
 
+                      // When speech ends naturally
                       _flutterTts.setCompletionHandler(() {
                         if (mounted) {
                           setState(() {
@@ -440,6 +300,7 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       },
     ).then((_) {
+      // This runs when dialog is dismissed (by Close or back button)
       if (isSpeakingFromDialog) {
         _flutterTts.stop();
         if (mounted) {
@@ -448,6 +309,58 @@ class _ChatScreenState extends State<ChatScreen> {
             _currentlySpeakingText = null;
           });
         }
+      }
+    });
+  }
+  Future<void> _initializeTts() async {
+    await _flutterTts.setVolume(1.0);
+
+    String partnerLanguage = "English";
+    String languageCode = _getLocaleFromPartnerLanguage(partnerLanguage);
+
+    await _flutterTts.setLanguage(languageCode);
+    print("TTS Language set to: $languageCode ($partnerLanguage)");
+
+    // Pitch & Rate based on gender/age (keep your existing logic)
+    double pitch = 1.0;
+    double rate = 0.5;
+    await _flutterTts.setPitch(pitch);
+    await _flutterTts.setSpeechRate(rate);
+
+    // Try to select best voice for partner's language
+    List<dynamic> voices = await _flutterTts.getVoices;
+    if (voices.isNotEmpty) {
+      for (var voice in voices) {
+        if (voice is Map && voice["locale"] != null) {
+          String locale = voice["locale"].toString();
+          if (locale.startsWith(languageCode.split('-').first)) {
+            await _flutterTts.setVoice({
+              "name": voice["name"].toString(),
+              "locale": locale,
+            });
+            print("Selected voice: ${voice["name"]}");
+            break;
+          }
+        }
+      }
+    }
+
+    _flutterTts.setCompletionHandler(() {
+      if (mounted) {
+        setState(() {
+          _isSpeaking = false;
+          _currentlySpeakingText = null;
+        });
+      }
+    });
+
+    _flutterTts.setErrorHandler((msg) {
+      print("TTS Error: $msg");
+      if (mounted) {
+        setState(() {
+          _isSpeaking = false;
+          _currentlySpeakingText = null;
+        });
       }
     });
   }
@@ -467,6 +380,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     await _flutterTts.stop();
 
+    // String partnerCode = _getLocaleFromPartnerLanguage(widget.partnerDetails["language"] ?? "English");
+    String partnerCode = "english";
+
     setState(() {
       _isSpeaking = true;
       _currentlySpeakingText = text.trim();
@@ -474,10 +390,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
     await _flutterTts.setLanguage("en-US");
 
-    final voices = await _flutterTts.getVoices;
+    // Optional: pick best English voice
+    List<dynamic> voices = await _flutterTts.getVoices;
     if (voices.isNotEmpty) {
       for (var voice in voices) {
-        if (voice is Map && (voice["locale"] as String?)?.startsWith("en") == true) {
+        if (voice is Map && voice["locale"]?.toString().startsWith("en") == true) {
           await _flutterTts.setVoice({
             "name": voice["name"].toString(),
             "locale": voice["locale"].toString(),
@@ -488,6 +405,68 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     await _flutterTts.speak(text.trim());
+
+    // Restore partner's language
+    await _flutterTts.setLanguage(partnerCode);
+  }
+
+
+  Future<void> _translateToPartnerLanguageAndSpeak(String englishText) async {
+    if (englishText.trim().isEmpty || !mounted) return;
+
+    setState(() {
+      _isSpeaking = true;
+      _currentlySpeakingText = englishText.trim();
+    });
+
+    await _flutterTts.stop();
+
+    String partnerLanguageName = widget.partnerDetails["language"] ?? "English";
+    String targetCode = _getLocaleFromPartnerLanguage(partnerLanguageName);
+
+    // If partner language is English, just speak in English
+    if (targetCode == "en-US") {
+      await _flutterTts.setLanguage("en-US");
+      await _flutterTts.speak(englishText.trim());
+      return;
+    }
+
+    try {
+      // Translate English → Partner's language
+      var translation = await _translator.translate(englishText.trim(), to: targetCode.split('-').first);
+
+      String translatedText = translation.text;
+
+      // Set TTS to partner's language
+      await _flutterTts.setLanguage(targetCode);
+
+      // Optional: Select best voice for target language
+      List<dynamic> voices = await _flutterTts.getVoices;
+      if (voices.isNotEmpty) {
+        for (var voice in voices) {
+          if (voice is Map && voice["locale"] != null) {
+            String locale = voice["locale"].toString();
+            if (locale.startsWith(targetCode.split('-').first)) {
+              await _flutterTts.setVoice({
+                "name": voice["name"].toString(),
+                "locale": locale,
+              });
+              break;
+            }
+          }
+        }
+      }
+
+      // Speak the translated text
+      await _flutterTts.speak(translatedText);
+    } catch (e) {
+      print("Translation failed: $e");
+      // Fallback: speak original in partner's voice (pronunciation only)
+      await _flutterTts.setLanguage(targetCode);
+      await _flutterTts.speak(englishText.trim());
+    }
+
+    // Restore original TTS settings if needed (optional)
   }
 
   Future<void> _stopSpeaking() async {
@@ -501,7 +480,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _initializeSpeech() async {
-    final available = await _speech.initialize(
+    bool available = await _speech.initialize(
       debugLogging: true,
       onStatus: (status) => print('Speech status: $status'),
       onError: (error) => print('Speech error: ${error.errorMsg}'),
@@ -536,9 +515,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!_isListening) return;
     _speech.stop();
 
-    final userText = _currentTranscription.trim();
+    final String userText = _currentTranscription.trim();
     if (userText.isNotEmpty) {
-      socketService.sendMessage(userText);
+      SocketService().sendMessage(userText);
     }
 
     if (mounted) {
@@ -563,34 +542,25 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _sendTextMessage() {
-    final text = _textController.text.trim();
+    final String text = _textController.text.trim();
     if (text.isEmpty) return;
 
-    socketService.sendMessage(text);
+    SocketService().sendMessage(text);
     _textController.clear();
     _scrollToBottom();
-
-    if (_showSuggestions) {
-      setState(() {
-        _showSuggestions = false;
-        _isBulbActive = false;
-      });
-    }
   }
+
   @override
   void dispose() {
     socketService.socket.off('message');
     _flutterTts.stop();
     _speech.stop();
     _scrollController.dispose();
-    _textController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final suggestions = _generateSuggestions();
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -638,18 +608,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _messages.isEmpty
-                ? const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text("Connecting to AI..."),
-                ],
-              ),
-            )
-                : ListView.builder(
+            child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.all(16),
               itemCount: _messages.length,
@@ -659,7 +618,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Listening indicator
           if (_isListening)
             Container(
               width: double.infinity,
@@ -701,76 +659,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
 
-          // Suggestion chips
-          if (_showSuggestions && suggestions.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amber[50],
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.amber[300]!, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  )
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.lightbulb, color: Colors.amber[800], size: 20),
-                      const SizedBox(width: 6),
-                      Text(
-                        "Quick Replies",
-                        style: TextStyle(
-                          color: Colors.amber[900],
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: _toggleSuggestions,
-                        child: Icon(Icons.close, size: 18, color: Colors.grey[700]),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: suggestions.map((suggestion) {
-                      return GestureDetector(
-                        onTap: () {
-                          _textController.text = suggestion;
-                          _sendTextMessage(); // auto-send
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.amber[300]!),
-                          ),
-                          child: Text(
-                            suggestion,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-
-          // Input area
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Container(
@@ -782,41 +670,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               child: Row(
                 children: [
-                  // Bulb button
-                  GestureDetector(
-                    onTap: _toggleSuggestions,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: _isBulbActive ? Colors.amber : Colors.grey[300],
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          if (_isBulbActive)
-                            BoxShadow(
-                              color: Colors.amber.withOpacity(0.5),
-                              blurRadius: 12,
-                              spreadRadius: 2,
-                            ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.lightbulb_outline,
-                        color: _isBulbActive ? Colors.amber[900] : Colors.grey[700],
-                        size: 24,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
                   Expanded(
                     child: TextField(
                       controller: _textController,
                       minLines: 1,
                       maxLines: 5,
                       textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendTextMessage(),
+                      onSubmitted: (value) => _sendTextMessage(),
                       decoration: const InputDecoration(
                         hintText: "Type a message...",
                         border: InputBorder.none,
@@ -825,9 +685,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       style: const TextStyle(fontSize: 16),
                     ),
                   ),
-
                   const SizedBox(width: 8),
-
                   if (_textController.text.trim().isEmpty)
                     GestureDetector(
                       onTapDown: (_) => _startListening(),
@@ -852,8 +710,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           size: 24,
                         ),
                       ),
-                    )
-                  else
+                    ),
+                  if (_textController.text.trim().isNotEmpty)
                     IconButton(
                       icon: Icon(Icons.send, color: appColor),
                       onPressed: _sendTextMessage,
@@ -868,8 +726,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(ChatMessage message) {
-    final isUser = message.isUser;
-    final isThisMessageSpeaking = _currentlySpeakingText == message.text.trim();
+    bool isUser = message.isUser;
+    bool isThisMessageSpeaking = _currentlySpeakingText == message.text.trim();
 
     return Padding(
       padding: EdgeInsets.only(
@@ -940,12 +798,47 @@ class _ChatScreenState extends State<ChatScreen> {
 
                   const SizedBox(width: 10),
 
-                  // Translate
+                  // Translate & Speak (opens dialog)
+                  // GestureDetector(
+                  //   onTap: () async {
+                  //     if (isThisMessageSpeaking) {
+                  //       await _stopSpeaking();
+                  //     } else {
+                  //       await _translateToPartnerLanguageAndSpeak(message.text);
+                  //     }
+                  //   },
+                  //   child: Container(
+                  //     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  //     decoration: BoxDecoration(
+                  //       color: isThisMessageSpeaking ? Colors.blue[50] : appColor.withOpacity(0.2),
+                  //       borderRadius: BorderRadius.circular(20),
+                  //       border: Border.all(color: appColor.withOpacity(0.4)),
+                  //     ),
+                  //     child: Row(
+                  //       mainAxisSize: MainAxisSize.min,
+                  //       children: [
+                  //         Icon(Icons.translate, size: 18, color: appColor),
+                  //         const SizedBox(width: 6),
+                  //         Text(
+                  //           // isThisMessageSpeaking ? "Stop" : "Translate in ${widget.partnerDetails["language"] ?? "Language"}",
+                  //           isThisMessageSpeaking ? "Translate" : "Translate",
+                  //           style: TextStyle(
+                  //             fontSize: 13,
+                  //             fontWeight: FontWeight.w600,
+                  //             color: appColor,
+                  //           ),
+                  //         ),
+                  //       ],
+                  //     ),
+                  //   ),
+                  // ),
+
                   GestureDetector(
                     onTap: () async {
                       if (isThisMessageSpeaking) {
                         await _stopSpeaking();
                       } else {
+                        // Open dialog showing translation in partner's language
                         await _showTranslationDialog(message.text);
                       }
                     },
@@ -1003,12 +896,10 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final bool hasAudio;
-  final String? example;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     this.hasAudio = false,
-    this.example,
   });
 }

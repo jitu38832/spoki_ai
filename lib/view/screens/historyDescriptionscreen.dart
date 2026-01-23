@@ -36,8 +36,8 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
   WordMeaningResponse wordMeaningResponse= WordMeaningResponse();
 
   double volume = 1.0;
-  double pitch = 1.0;
-  double rate = 0.5;
+  double pitch = 0.96;
+  double rate = 0.29;
   bool isSpeaking = false;
   Map<String, String> availableLanguages = {};
   String? selectedLanguageCode;
@@ -48,7 +48,9 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
 
     BlocProvider.of<AppCubit>(context).historyDescription(token, widget.id);
 
-    initTts();
+    initTts().then((_) {
+      _trySetBestVoice();   // ← add this
+    });
     super.initState();
   }
 
@@ -142,18 +144,58 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
       debugPrint("Error loading languages: $e");
     }
   }
+  Future<void> _trySetBestVoice() async {
+    try {
+      final voices = await flutterTts.getVoices;
+
+      // Debug: see what voices you actually have
+      print("Available voices: $voices");
+
+      // Try to find a nice modern English voice
+      // Some good candidates (names vary by device/Android version/region/language pack):
+      // "en-us-x-tpd-network", "en-us-x-sfg#male_1-local", etc.
+      // "en-gb-x-gbb-network" (British is often perceived as more premium)
+
+      for (var voice in voices) {
+        final name = voice["name"]?.toString().toLowerCase() ?? "";
+        final locale = voice["locale"]?.toString() ?? "";
+
+        // Prefer network/high quality voices
+        if (locale.startsWith("en") &&
+            (name.contains("network") || name.contains("wavenet") || name.contains("neural"))) {
+          await flutterTts.setVoice({"name": voice["name"], "locale": locale});
+          print("Selected better voice: $name ($locale)");
+          return;
+        }
+      }
+
+      // Fallback: at least try to set any en-US / en-GB voice explicitly
+      await flutterTts.setVoice({"name": "en-us-x-tpd-local", "locale": "en-US"});
+      // or British variant (many people find British voices more "AI-like"):
+      // await flutterTts.setVoice({"name": "en-gb-x-gbb-network", "locale": "en-GB"});
+
+    } catch (e) {
+      print("Couldn't set custom voice: $e");
+    }
+  }
 
   Future<void> speak() async {
     if (historyDescriptionResponse.data!.story.toString().isEmpty) return;
 
+    // Apply settings every time before speaking (safe & recommended)
     await flutterTts.setVolume(volume);
-    await flutterTts.setSpeechRate(rate);
+    await flutterTts.setSpeechRate(rate);   // ← most important for your request
     await flutterTts.setPitch(pitch);
     await flutterTts.setLanguage(selectedLanguageCode ?? "en-US");
 
-    int result = await flutterTts
-        .speak(historyDescriptionResponse.data!.story.toString());
-    if (result == 1) setState(() => isSpeaking = true);
+    // Optional but sometimes helps stability on Android
+    // await flutterTts.awaitSpeakCompletion(true); // waits until speaking is done
+
+    int result = await flutterTts.speak(historyDescriptionResponse.data!.story.toString());
+
+    if (result == 1) {
+      setState(() => isSpeaking = true);
+    }
   }
 
   Future<void> stop() async {

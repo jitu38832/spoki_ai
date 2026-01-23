@@ -80,6 +80,8 @@ class _EditprofileState extends State<Editprofile> {
             padding: const EdgeInsets.all(15.0),
             child: Column(
               children: [
+
+
                 TextFieldWidget(
                   title: 'Name',
                   controller: nameController,
