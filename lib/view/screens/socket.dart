@@ -8,36 +8,11 @@ class SocketService {
   late IO.Socket socket;
   bool get isConnected => socket.connected;
 
-  // Flag to prevent multiple initial messages
   bool _hasSentInitialGreeting = false;
-
-  // ── Private helper method ── (declared BEFORE it's used)
-  void _sendInitialGreeting({
-    required String botName,
-    required String gender,
-  }) {
-    final safeGender = gender.toLowerCase() == "female" ? "female" : "male";
-    final greeting = "hi,botname=$botName,gender=$safeGender";
-
-    socket.emit('sendMessage', {"message": greeting});
-    print('📤 Auto-sent initial greeting: $greeting');
-  }
-
-  // Public method to be called from ChatScreen with real partner data
-  void sendInitialGreetingWithPartnerDetails(Map<String, dynamic> partnerDetails) {
-    final botName = "jarvis"; // you can make this dynamic later if needed
-    final gender = (partnerDetails["gender"] ?? "male").toString().toLowerCase();
-
-    _sendInitialGreeting(
-      botName: botName,
-      gender: gender,
-    );
-  }
 
   void initSocket() {
     socket = IO.io(
       'ws://3.109.110.211',
-      // 'ws://13.127.143.122:9799',
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableAutoConnect()
@@ -50,33 +25,43 @@ class SocketService {
 
     socket.onConnect((_) {
       print('✅ SOCKET CONNECTED');
-
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (socket.connected && !_hasSentInitialGreeting) {
-          // Default fallback greeting (in case partnerDetails not available yet)
-          _sendInitialGreeting(
-            botName: "jarvis",
-            gender: "male", // ← safe default
-          );
-          _hasSentInitialGreeting = true;
-        }
-      });
+      // Do NOT send greeting here automatically anymore
+      // → We will call sendInitialGreetingWithPartnerDetails() from ChatScreen
     });
-
-    // Important: This is where you should call the real gender version
-    // → But only AFTER connection (see ChatScreen below)
 
     socket.onConnectError((err) => print('❌ Connect error: $err'));
     socket.onError((err) => print('❌ Socket error: $err'));
     socket.onDisconnect((_) => print('🔌 Disconnected'));
     socket.onReconnect((attempt) {
       print('🔄 Reconnected after $attempt attempts');
-      _hasSentInitialGreeting = false; // reset flag on reconnect
+      _hasSentInitialGreeting = false; // allow resending after reconnect
     });
 
     socket.on('message', (data) {
-      print('📩 Received (global): $data');
+      print('📩 Received: $data');
     });
+  }
+
+  /// Call this method **after** socket is connected and you have real partnerDetails
+  void sendInitialGreetingWithPartnerDetails(Map<String, dynamic> partnerDetails) {
+    if (_hasSentInitialGreeting) {
+      print("→ Initial greeting already sent, skipping...");
+      return;
+    }
+
+    final botName = partnerDetails['name']?.toString() ?? "jarvis";
+    final genderRaw = partnerDetails['gender']?.toString().toLowerCase() ?? "male";
+    final safeGender = (genderRaw == "female") ? "female" : "male";
+
+    final greeting = "hi,botname=$botName,gender=$safeGender";
+
+    if (socket.connected) {
+      socket.emit('sendMessage', {"message": greeting});
+      print('📤 Sent real initial greeting: $greeting');
+      _hasSentInitialGreeting = true;
+    } else {
+      print('⚠️ Socket not connected yet — cannot send initial greeting');
+    }
   }
 
   void sendMessage(String text) {

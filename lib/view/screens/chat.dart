@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -29,17 +30,24 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSpeaking = false;
   final TextEditingController _textController = TextEditingController();
 
-  String _currentTranscription = '';
+  String _accumulatedTranscription = '';
   final GoogleTranslator _translator = GoogleTranslator();
   String? _currentlySpeakingText;
 
   List<ChatMessage> _messages = [];
 
   late SocketService socketService;
+  String _previousRecognized = '';
 
   bool _showSuggestions = false;
   bool _isBulbActive = false;
   String? _lastAiMessage;
+
+  // For 25-second continuous listening
+  Timer? _countdownTimer;
+  int _remainingSeconds = 25;
+  Timer? _restartTimer;
+  bool _shouldKeepListening = true;
 
   String _getLocaleFromPartnerLanguage(String partnerLang) {
     String lower = partnerLang.toLowerCase().trim();
@@ -83,17 +91,27 @@ class _ChatScreenState extends State<ChatScreen> {
     _initializeTts();
     _initializeSpeech();
 
-    // Silent initialization
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await Future.delayed(const Duration(milliseconds: 1200));
-      if (!mounted) return;
+    // Send real partner name & gender once socket connects
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Already connected → send immediately
       if (socketService.isConnected) {
-        const initMessage = "hi,botname=jarvis,gender=male";
-        socketService.sendMessage(initMessage);
-        print("→ Sent silent init: $initMessage");
+        socketService.sendInitialGreetingWithPartnerDetails(widget.partnerDetails);
+        return;
       }
+
+      // Not connected yet → wait for first connect event
+      void onFirstConnect(_) {
+        if (mounted) {
+          socketService.sendInitialGreetingWithPartnerDetails(widget.partnerDetails);
+        }
+        // Clean up listener after first use
+        socketService.socket.off('connect', onFirstConnect);
+      }
+
+      socketService.socket.onConnect(onFirstConnect);
     });
 
+    // Listen for incoming messages
     socketService.socket.on('message', (data) {
       print('Received from server: $data');
 
@@ -104,10 +122,10 @@ class _ChatScreenState extends State<ChatScreen> {
       if (messageText == null || messageText.isEmpty) return;
       if (!mounted) return;
 
-      // Skip initialization echo
+      // Skip our own initialization echo
       if (type == 'user' &&
-          messageText.toLowerCase().contains('botname=jarvis') &&
-          messageText.toLowerCase().contains('gender=male')) {
+          messageText.toLowerCase().contains('botname=') &&
+          messageText.toLowerCase().contains('gender=')) {
         print("↳ Skipping UI for initialization message");
         return;
       }
@@ -119,14 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (type == 'user') {
           _messages.add(ChatMessage(text: messageText, isUser: true));
         } else if (type == 'ai') {
-          // Skip generic companion welcome
-          if (!_isFirstAiMessageReceived &&
-              messageText.contains("personal AI companion") &&
-              messageText.contains("let’s begin 😊")) {
-            print("↳ Skipping generic companion welcome message");
-            return;
-          }
-
+          // Removed skipping of generic welcome → now shows first message
           _messages.add(ChatMessage(
             text: messageText,
             isUser: false,
@@ -135,7 +146,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ));
           _lastAiMessage = messageText;
 
-          // Auto-speak first real AI message
           if (!_isFirstAiMessageReceived) {
             _isFirstAiMessageReceived = true;
             Future.microtask(() {
@@ -154,7 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initializeTts() async {
     await _flutterTts.setVolume(1.0);
 
-    final languageCode = _getLocaleFromPartnerLanguage("English"); // or dynamic
+    final languageCode = _getLocaleFromPartnerLanguage("English");
 
     await _flutterTts.setLanguage(languageCode);
 
@@ -173,30 +183,27 @@ class _ChatScreenState extends State<ChatScreen> {
 
       bool voiceSet = false;
       final friendlyVoicePatterns = [
-        // Very natural ones (often WaveNet or Neural voices)
         "wavenet",
         "neural",
         "premium",
         "enhanced",
         "studio",
         "high-quality",
-        // Then gender hints
         "male",
         "man",
         "boy",
         "david",
         "tom",
         "john",
-        "tpd", // often male on Google TTS
+        "tpd",
         "female",
         "woman",
         "girl",
         "karen",
         "samantha",
-        "tpf", // often female
+        "tpf",
       ];
 
-      // First try: most natural + gender match
       for (var pattern in friendlyVoicePatterns) {
         for (var voice in voices) {
           if (voice is Map && voice["locale"] != null) {
@@ -205,9 +212,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
             if (locale.startsWith(languageCode.split('-').first) &&
                 nameLower.contains(pattern)) {
-              if ((genderLower == "female" && (pattern.contains("female") || pattern.contains("woman") || pattern.contains("girl"))) ||
-                  (genderLower == "male" && (pattern.contains("male") || pattern.contains("man") || pattern.contains("boy")) ||
-                      pattern.contains("wavenet") || pattern.contains("neural"))) {
+              if ((genderLower == "female" &&
+                  (pattern.contains("female") ||
+                      pattern.contains("woman") ||
+                      pattern.contains("girl"))) ||
+                  (genderLower == "male" &&
+                      (pattern.contains("male") ||
+                          pattern.contains("man") ||
+                          pattern.contains("boy") ||
+                          pattern.contains("wavenet") ||
+                          pattern.contains("neural")))) {
                 await _flutterTts.setVoice({"name": voice["name"], "locale": locale});
                 print("Selected friendly/natural voice: ${voice["name"]} ($locale)");
                 voiceSet = true;
@@ -219,7 +233,6 @@ class _ChatScreenState extends State<ChatScreen> {
         if (voiceSet) break;
       }
 
-      // Ultimate fallback: any voice in the correct language
       if (!voiceSet) {
         for (var voice in voices) {
           if (voice is Map && voice["locale"] != null) {
@@ -232,7 +245,7 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         }
       }
-      // Debug: list all voices
+
       print("\n=== Available TTS Voices ===");
       for (var v in voices) {
         print(" - ${v['name']} | ${v['locale']} | gender?: ${v['gender'] ?? 'unknown'}");
@@ -262,8 +275,129 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // ── The rest of your methods remain unchanged ──
-  // ( _speak, _speakInEnglish, _stopSpeaking, _generateSuggestions, etc. )
+  Future<void> _initializeSpeech() async {
+    final available = await _speech.initialize(
+      debugLogging: true,
+      onStatus: (status) {
+        print('Speech status: $status');
+        if (_isListening && (status == 'notListening' || status == 'done')) {
+          _tryRestartListening();
+        }
+      },
+      onError: (error) {
+        print('Speech error: ${error.errorMsg}');
+        if (_isListening && !error.permanent) {
+          _tryRestartListening();
+        }
+      },
+    );
+    if (mounted) setState(() => _speechInitialized = available);
+  }
+
+  void _tryRestartListening() {
+    if (!_shouldKeepListening || !_isListening) return;
+
+    _restartTimer?.cancel();
+    _restartTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted && _isListening) {
+        print("→ Auto-restarting speech recognition after pause");
+        _startContinuousListen();
+      }
+    });
+  }
+
+  void _startContinuousListen() {
+    _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+
+        final current = result.recognizedWords.trim();
+
+        // Only append if there's actually new content
+        if (current.isNotEmpty && current.length > _previousRecognized.length) {
+          final newPart = current.substring(_previousRecognized.length).trim();
+
+          if (newPart.isNotEmpty) {
+            setState(() {
+              if (_accumulatedTranscription.isNotEmpty &&
+                  !_accumulatedTranscription.endsWith(' ')) {
+                _accumulatedTranscription += ' ';
+              }
+              _accumulatedTranscription += newPart;
+            });
+          }
+        }
+
+        // Update previous for next partial result
+        _previousRecognized = current;
+
+        // If final result → reset for next segment
+        if (result.finalResult) {
+          _previousRecognized = '';
+        }
+      },
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 5),
+      partialResults: true,
+      localeId: "en_US",
+      cancelOnError: false,
+    );
+  }
+
+  void _toggleListening() {
+    if (_isListening) {
+      _stopListeningAndSend();
+    } else {
+      _startListening();
+    }
+  }
+
+  void _startListening() {
+    if (!_speechInitialized) return;
+
+    setState(() {
+      _isListening = true;
+      _accumulatedTranscription = '';
+      _previousRecognized = '';   // ← important: reset
+      _remainingSeconds = 25;
+    });
+    _shouldKeepListening = true;
+    _startContinuousListen();
+
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _remainingSeconds--;
+        if (_remainingSeconds <= 0) {
+          timer.cancel();
+          _stopListeningAndSend();
+        }
+      });
+    });
+  }
+
+  void _stopListeningAndSend() {
+    _shouldKeepListening = false;
+    _restartTimer?.cancel();
+    _countdownTimer?.cancel();
+    _speech.stop();
+
+    final finalText = _accumulatedTranscription.trim();
+    if (finalText.isNotEmpty) {
+      socketService.sendMessage(finalText);
+      print("Sent accumulated message: $finalText");
+    }
+
+    setState(() {
+      _isListening = false;
+      _accumulatedTranscription = '';
+      _remainingSeconds = 25;
+    });
+  }
 
   List<String> _generateSuggestions() {
     String? latestExample;
@@ -276,17 +410,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (latestExample == null || latestExample.isEmpty) {
       return [
-        "Hi Jarvis, let's start learning!",
+        "Hi, let's start learning!",
         "Can you teach me present simple tense?",
         "Please give me an example.",
-        "How do I introduce myself in English?"
+        "How do I introduce myself?"
       ];
     }
 
-    final preview = _shortenForReply(latestExample);
-    return [
-      latestExample
-    ];
+    return [latestExample];
   }
 
   String _shortenForReply(String example) {
@@ -454,14 +585,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _speak(String text) async {
     if (text.trim().isEmpty || !mounted) return;
+
+    // Clean the text before speaking
+    final cleanText = _cleanTextForSpeech(text);
+
+    if (cleanText.isEmpty) {
+      print("No speakable text after cleaning: $text");
+      return;
+    }
+
+    print("Speaking cleaned text: $cleanText");
+
     await _flutterTts.stop();
     setState(() {
       _isSpeaking = true;
-      _currentlySpeakingText = text.trim();
+      _currentlySpeakingText = cleanText; // show cleaned version in UI if needed
     });
-    await _flutterTts.speak(text);
-  }
 
+    await _flutterTts.speak(cleanText);
+  }
   Future<void> _speakInEnglish(String text) async {
     if (text.trim().isEmpty || !mounted) return;
 
@@ -500,55 +642,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _initializeSpeech() async {
-    final available = await _speech.initialize(
-      debugLogging: true,
-      onStatus: (status) => print('Speech status: $status'),
-      onError: (error) => print('Speech error: ${error.errorMsg}'),
-    );
-    if (mounted) setState(() => _speechInitialized = available);
-  }
-
-  void _startListening() async {
-    if (!_speechInitialized) await _initializeSpeech();
-    if (!_speechInitialized || _isListening) return;
-
-    setState(() {
-      _isListening = true;
-      _currentTranscription = '';
-    });
-
-    _speech.listen(
-      onResult: (result) {
-        if (mounted) {
-          setState(() {
-            _currentTranscription = result.recognizedWords;
-          });
-        }
-      },
-      listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 10),
-      partialResults: true,
-    );
-  }
-
-  void _stopListening() {
-    if (!_isListening) return;
-    _speech.stop();
-
-    final userText = _currentTranscription.trim();
-    if (userText.isNotEmpty) {
-      socketService.sendMessage(userText);
-    }
-
-    if (mounted) {
-      setState(() {
-        _isListening = false;
-        _currentTranscription = '';
-      });
-    }
-  }
-
   void _scrollToBottom() {
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -577,8 +670,11 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     }
   }
+
   @override
   void dispose() {
+    _restartTimer?.cancel();
+    _countdownTimer?.cancel();
     socketService.socket.off('message');
     _flutterTts.stop();
     _speech.stop();
@@ -659,7 +755,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Listening indicator
           if (_isListening)
             Container(
               width: double.infinity,
@@ -689,7 +784,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    _currentTranscription.isEmpty ? "Speak now..." : _currentTranscription,
+                    _accumulatedTranscription.isEmpty ? "Speak now..." : _accumulatedTranscription,
                     style: GoogleFonts.roboto(
                       fontSize: 20,
                       fontWeight: FontWeight.w500,
@@ -697,11 +792,19 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "Time left: $_remainingSeconds sec",
+                    style: GoogleFonts.roboto(
+                      fontSize: 16,
+                      color: _remainingSeconds <= 5 ? Colors.red : appColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
 
-          // Suggestion chips
           if (_showSuggestions && suggestions.isNotEmpty)
             Container(
               margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -749,7 +852,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       return GestureDetector(
                         onTap: () {
                           _textController.text = suggestion;
-                          _sendTextMessage(); // auto-send
+                          _sendTextMessage();
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -770,7 +873,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
 
-          // Input area
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Container(
@@ -782,7 +884,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               child: Row(
                 children: [
-                  // Bulb button
                   GestureDetector(
                     onTap: _toggleSuggestions,
                     child: AnimatedContainer(
@@ -830,9 +931,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
                   if (_textController.text.trim().isEmpty)
                     GestureDetector(
-                      onTapDown: (_) => _startListening(),
-                      onTapUp: (_) => _stopListening(),
-                      onTapCancel: _stopListening,
+                      onTap: _toggleListening,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.all(10),
@@ -905,7 +1004,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   const SizedBox(width: 12),
 
-                  // Listen in English
                   GestureDetector(
                     onTap: () {
                       if (isThisMessageSpeaking) {
@@ -940,7 +1038,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
                   const SizedBox(width: 10),
 
-                  // Translate
                   GestureDetector(
                     onTap: () async {
                       if (isThisMessageSpeaking) {
@@ -996,6 +1093,35 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+  // Add this helper method in _ChatScreenState class
+  String _cleanTextForSpeech(String text) {
+    // 1. Remove emojis (split into multiple safe character classes)
+    String cleaned = text.replaceAll(
+      RegExp(
+        r'[\u{1F300}-\u{1F9FF}]'     // Miscellaneous Symbols and Pictographs
+        r'|[\u{2600}-\u{26FF}]'      // Miscellaneous Symbols
+        r'|[\u{2700}-\u{27BF}]'      // Dingbats
+        r'|[\u{FE00}-\u{FE0F}]'      // Variation Selectors
+        r'|[\u{1F1E6}-\u{1F1FF}]',   // Regional Indicator Symbols (flags)
+        unicode: true,
+      ),
+      '',
+    );
+
+    // 2. Remove punctuation and special characters that TTS often reads aloud
+    cleaned = cleaned.replaceAll(
+      RegExp(r'[!,?.:;()\[\]{}"@#$%^&*+=~`<>]'),
+      '',
+    );
+
+        // 3. Collapse multiple whitespace (spaces, newlines, tabs) → single space
+        cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    // Optional: skip very short or empty results
+    if (cleaned.length < 5) return '';
+
+    return cleaned;
   }
 }
 
