@@ -9,6 +9,7 @@
     <application
         android:label="spokiai"
         android:name="${applicationName}"
+        android:allowBackup="false"
         android:icon="@mipmap/app_icon">
         <activity
             android:name=".MainActivity"

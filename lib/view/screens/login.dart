@@ -32,7 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
   int _currentIndex = 0;
   final CarouselSliderController _carouselController =
       CarouselSliderController();
-  bool _termsAccepted = true; // Checked by default
+  bool _termsAccepted = true;
   final TextEditingController _phoneController = TextEditingController();
 
   final List<SlideData> _slides = [

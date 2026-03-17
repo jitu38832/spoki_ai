@@ -24,6 +24,40 @@ class AppCubit extends Cubit<AppStates> {
     }
   }
 
+  Future<void> checkStatus() async {
+    emit(state.copyWith(status: AppStatus.checkStatusLoading));
+    try {
+      ResponseData response = await repository.checkStatus();
+      emit(state.copyWith(
+          status: AppStatus.checkStatusSuccess, responseData: response));
+    } on ErrorData catch (errorData) {
+      emit(state.copyWith(
+          status: AppStatus.checkStatusError,
+          errorData: errorData,
+          error: null));
+    } catch (e) {
+      emit(state.copyWith(
+          status: AppStatus.checkStatusError,
+          error: e.toString(),
+          errorData: null));
+    }
+  }
+
+  Future<void> signUp(Map<String, dynamic> signUpDetails) async {
+    emit(state.copyWith(status: AppStatus.signupLoading));
+    try {
+      ResponseData response = await repository.signUp(signUpDetails);
+      emit(state.copyWith(
+          status: AppStatus.signupSuccess, responseData: response));
+    } on ErrorData catch (errorData) {
+      emit(state.copyWith(
+          status: AppStatus.signupError, errorData: errorData, error: null));
+    } catch (e) {
+      emit(state.copyWith(
+          status: AppStatus.signupError, error: e.toString(), errorData: null));
+    }
+  }
+
   Future<void> generateStory(
       String token, Map<String, dynamic> storyDetails) async {
     emit(state.copyWith(status: AppStatus.generateStoryLoading));
@@ -58,8 +92,7 @@ class AppCubit extends Cubit<AppStates> {
           error: errorStatus.toString(),
         ),
       );
-    }
-    catch (e) {
+    } catch (e) {
       emit(state.copyWith(
           status: AppStatus.privacyPolicyError,
           error: e.toString(),

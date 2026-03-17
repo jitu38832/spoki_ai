@@ -11,12 +11,14 @@ import 'package:spokiai/model/historydescription.dart';
 import 'package:spokiai/model/homebanner.dart';
 import 'package:spokiai/model/quizhistory.dart';
 import 'package:spokiai/model/quizques.dart';
+import 'package:spokiai/model/signup.dart';
 import 'package:spokiai/model/storyhistory.dart';
 import 'package:spokiai/model/submitquiz.dart';
 import 'package:spokiai/model/wordmeaning.dart';
 import 'package:spokiai/viewmodel/repository/response_status.dart';
 
 
+import '../../model/checkstatus.dart';
 import '../../model/privacypolicy.dart';
 import 'api_service.dart';
 
@@ -40,6 +42,23 @@ class AppRepository {
     }
   }
 
+  Future<ResponseData> checkStatus() async {
+    try {
+      final response = await ApiService()
+          .sendRequest
+          .get("users/key");
+
+      return ResponseData(
+          statusCode: response.statusCode,
+          response: CheckStatusResponse.fromJson(response.data));
+    } on DioException catch (e) {
+      throw ErrorData(
+          message: e.response!.data['error'], code: e.response!.statusCode);
+    } on Exception catch (_) {
+      rethrow;
+    }
+  }
+
   Future<ResponseData> generateStory(String token, Map<String, dynamic> storyDetails) async {
     try {
       final response = await ApiService(token: token)
@@ -49,6 +68,23 @@ class AppRepository {
       return ResponseData(
           statusCode: response.statusCode,
           response: GenerateStoryResponse.fromJson(response.data));
+    } on DioException catch (e) {
+      throw ErrorData(
+          message: e.response!.data['message'], code: e.response!.statusCode);
+    } on Exception catch (_) {
+      rethrow;
+    }
+  }
+
+  Future<ResponseData> signUp(Map<String, dynamic> signUpDetails) async {
+    try {
+      final response = await ApiService()
+          .sendRequest
+          .post("auth/login", data: signUpDetails);
+
+      return ResponseData(
+          statusCode: response.statusCode,
+          response: SignUpResponse.fromJson(response.data));
     } on DioException catch (e) {
       throw ErrorData(
           message: e.response!.data['message'], code: e.response!.statusCode);

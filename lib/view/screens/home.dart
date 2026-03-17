@@ -12,6 +12,7 @@ import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/screens/privacypolicy.dart';
 import 'package:spokiai/view/screens/termscondition.dart';
 import 'package:spokiai/view/utils/colors.dart';
+import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 
 import '../../viewmodel/cubit/appcubit.dart';
@@ -347,6 +348,47 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
 
+            ListTile(
+              leading: const Icon(Icons.delete, size: 26, ),
+              title: const Text("Delete Account", ),
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) {
+                    return AlertDialog(
+                      title: const Text("Confirm Delete"),
+                      content: const Text("Are you sure you want to delete your account?"),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      actions: [
+                        TextButton(
+                          child: const Text("Cancel"),
+                          onPressed: () => Navigator.pop(context), // close dialog
+                        ),
+                        TextButton(
+                          child: const Text(
+                            "Yes, Delete",
+                            style: TextStyle(color: Colors.red),
+                          ),
+                          onPressed: () async {
+                            PreferenceManager.clearPreferences();
+                            await FirebaseAuth.instance.signOut();
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => LoginScreen(),
+                              ),
+                                  (route) => false,
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+
             const Spacer(),
 
             // Logout (optional)
@@ -373,6 +415,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: TextStyle(color: Colors.red),
                           ),
                           onPressed: () async {
+                            PreferenceManager.clearPreferences();
                             await FirebaseAuth.instance.signOut();
                             Navigator.pushAndRemoveUntil(
                               context,

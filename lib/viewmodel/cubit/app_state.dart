@@ -9,10 +9,20 @@ enum AppStatus {
   loginSuccess,
   loginError,
 
+  checkStatusLoading,
+  checkStatusSuccess,
+  checkStatusError,
+
+
 
   generateStoryLoading,
   generateStorySuccess,
   generateStoryError,
+
+
+  signupLoading,
+  signupSuccess,
+  signupError,
 
   storyHistoryLoading,
   storyHistorySuccess,

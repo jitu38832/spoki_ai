@@ -42,4 +42,12 @@ class DefaultFirebaseOptions {
     messagingSenderId: '303958409160',
     projectId: 'spoki-ai-18e6f',
   );
+
+  static  FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyBilJtk8zEJWAJUK6VwMzShxHxxQwkNnEo',
+    appId: '1:303958409160:ios:c41b1f8b345c247f1c8afd',
+    messagingSenderId: '303958409160',
+    projectId: 'spoki-ai-18e6f',
+    iosBundleId: 'com.spokiai',
+  );
 }
