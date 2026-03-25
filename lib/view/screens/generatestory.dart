@@ -1,3 +1,5 @@
+import 'dart:math' show max;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -47,18 +49,6 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
     'Comedy',
     'Motivational'
   ];
-  final List<String> styles = [
-    'Conversational',
-    'Modern',
-    'Poetic',
-    'Teacher-Like',
-    'Random',
-    'Emotional-Based',
-    'Event-DrivenAesthetic',
-    'Thoughtful',
-    'Mystical'
-  ];
-
   @override
   void initState() {
     token = PreferenceManager.getStringValue(key: "token") ?? "";
@@ -117,7 +107,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                 _buildStoryLengthSelection(),
                 const SizedBox(height: 24),
 
-                // Genre and Style Dropdowns
+                // Genre dropdown
 
                 Container(
                   decoration: BoxDecoration(
@@ -135,14 +125,6 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                             fontWeight: FontWeight.w600),
                         const SizedBox(height: 10),
                         _buildGenreDropdown(),
-                        const SizedBox(height: 16),
-                        textRoboto(
-                            text: "Select Style",
-                            color: Colors.black,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600),
-                        const SizedBox(height: 10),
-                        _buildStyleDropdown(),
                       ],
                     ),
                   ),
@@ -353,7 +335,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _buildLengthButton('Long',
-                    isSelected: _selectedLength == 'Long', hasLock: true),
+                    isSelected: _selectedLength == 'Long'),
               ),
             ],
           ),
@@ -362,8 +344,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
     );
   }
 
-  Widget _buildLengthButton(String label,
-      {required bool isSelected, bool hasLock = false}) {
+  Widget _buildLengthButton(String label, {required bool isSelected}) {
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -385,14 +366,6 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
               fontWeight: FontWeight.w600,
               color: isSelected ? Colors.white : Colors.white,
             ),
-            if (hasLock) ...[
-              const SizedBox(width: 4),
-              Icon(
-                Icons.lock,
-                size: 14,
-                color: isSelected ? Colors.white : Colors.white,
-              ),
-            ],
           ],
         ),
       ),
@@ -448,53 +421,46 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
     );
   }
 
-  Widget _buildStyleDropdown() {
-    return Card(
-      elevation: 6,
-      shadowColor: appColor.withOpacity(0.8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: appColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: DropdownButtonFormField<String>(
-          value: _selectedStyle,
-          decoration: InputDecoration(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            border: InputBorder.none,
-            hintText: "Select Style",
-            hintStyle: GoogleFonts.roboto(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              color: Colors.white,
-            ),
-            suffixIcon: const Icon(
-              Icons.keyboard_arrow_down,
-              color: Colors.white,
-            ),
-          ),
-          icon: const SizedBox.shrink(),
-          dropdownColor: Colors.black,
-          style: GoogleFonts.roboto(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: Colors.white,
-          ),
-          items: styles.map((style) {
-            return DropdownMenuItem(
-              value: style,
-              child: Text(style),
-            );
-          }).toList(),
-          onChanged: (value) {
-            setState(() {
-              _selectedStyle = value!;
-            });
-          },
-        ),
-      ),
+  static const List<String> _learningLevelLabels = [
+    'Level 1 (Starter)',
+    'Level 2 (Beginner)',
+    'Level 3 (Intermediate)',
+    'Level 4 (Fluent)',
+  ];
+
+  TextStyle _levelButtonLabelStyle() {
+    return GoogleFonts.inter(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: Colors.white,
+      height: 1.25,
     );
+  }
+
+  /// Row height for the learning-level grid from actual label wrapping at this width.
+  double _learningLevelMainAxisExtent(BuildContext context, double gridMaxWidth) {
+    const crossAxisSpacing = 10.0;
+    const horizontalPadding = 4.0;
+    const verticalPaddingTotal = 16.0;
+    const safety = 6.0;
+
+    final cellWidth = (gridMaxWidth - crossAxisSpacing) / 2;
+    final textMaxWidth =
+        (cellWidth - horizontalPadding * 2).clamp(48.0, double.infinity);
+
+    final textScaler = MediaQuery.textScalerOf(context);
+    final style = _levelButtonLabelStyle();
+    var maxTextHeight = 0.0;
+    for (final label in _learningLevelLabels) {
+      final painter = TextPainter(
+        text: TextSpan(text: label, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: textScaler,
+      )..layout(maxWidth: textMaxWidth);
+      maxTextHeight = max(maxTextHeight, painter.size.height);
+    }
+
+    return max(56.0, maxTextHeight + verticalPaddingTotal + safety);
   }
 
   Widget _buildLearningLevelSection() {
@@ -508,20 +474,25 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
           color: darkGrey,
         ),
         const SizedBox(height: 16),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 3.2,
-          // adjust for height/width
-          children: [
-            _buildLevelButton('Level 1 (Starter)'),
-            _buildLevelButton('Level 2 (Beginner)'),
-            _buildLevelButton('Level 3 (Intermediate)'),
-            _buildLevelButton('Level 4 (Fluent)'),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final mainExtent =
+                _learningLevelMainAxisExtent(context, constraints.maxWidth);
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                mainAxisExtent: mainExtent,
+              ),
+              itemCount: _learningLevelLabels.length,
+              itemBuilder: (context, index) {
+                return _buildLevelButton(_learningLevelLabels[index]);
+              },
+            );
+          },
         ),
       ],
     );
@@ -537,13 +508,17 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
         });
       },
       child: Card(
+        margin: EdgeInsets.zero,
         elevation: 6,
         shadowColor: isSelected
             ? orangeColor.withOpacity(0.8)
             : Colors.black.withOpacity(0.7),
+        clipBehavior: Clip.antiAlias,
         child: Container(
+          width: double.infinity,
+          height: double.infinity,
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           decoration: BoxDecoration(
             color: isSelected ? orangeColor : Colors.black.withOpacity(0.7),
             borderRadius: BorderRadius.circular(10),
@@ -552,12 +527,13 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
               width: isSelected ? 2 : 1,
             ),
           ),
-          child: textInter(
-            text: label,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
+          child: Text(
+            label,
+            style: _levelButtonLabelStyle(),
             textAlign: TextAlign.center,
+            maxLines: 4,
+            softWrap: true,
+            overflow: TextOverflow.clip,
           ),
         ),
       ),

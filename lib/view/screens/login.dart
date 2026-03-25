@@ -9,6 +9,7 @@ import 'package:dots_indicator/dots_indicator.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:spokiai/model/getprofile.dart';
 import 'package:spokiai/model/googlelogin.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 
@@ -19,6 +20,7 @@ import '../utils/constants.dart';
 import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
 import 'dashboard.dart';
+import 'editprofile.dart';
 import 'forgot_password.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -33,6 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final CarouselSliderController _carouselController =
       CarouselSliderController();
   bool _termsAccepted = true;
+  bool _routeAfterGoogleProfile = false;
   final TextEditingController _phoneController = TextEditingController();
 
   final List<SlideData> _slides = [
@@ -246,27 +249,60 @@ class _LoginScreenState extends State<LoginScreen> {
                   GoogleLoginResponse googleLoginResponse =
                       state.responseData?.response as GoogleLoginResponse;
 
-                  await PreferenceManager.insertValue(
-                      key: "token",
-                      value: googleLoginResponse.data?.tokens?.access?.token
-                              .toString() ??
-                          "");
+                  final accessToken = googleLoginResponse
+                          .data?.tokens?.access?.token
+                          .toString() ??
+                      "";
 
+                  await PreferenceManager.insertValue(
+                      key: "token", value: accessToken);
+
+                  if (!context.mounted) return;
                   showToast(context: context, message: "Logged in successfully");
 
+                  setState(() => _routeAfterGoogleProfile = true);
+                  context.read<AppCubit>().getProfile(accessToken);
+                  return;
+                }
+
+                if (_routeAfterGoogleProfile &&
+                    state.status == AppStatus.getProfileSuccess) {
+                  setState(() => _routeAfterGoogleProfile = false);
+                  final response =
+                      state.responseData?.response as GetProfileResponse;
+                  if (!context.mounted) return;
+                  final incomplete = profileNeedsCompletion(response.data);
                   Navigator.pushAndRemoveUntil(
                     context,
                     MaterialPageRoute(
-                      builder: (context) {
-                        return DashboardScreen();
-                      },
+                      builder: (context) => incomplete
+                          ? const Editprofile(isPostLoginSetup: true)
+                          : const DashboardScreen(),
+                    ),
+                    (route) => false,
+                  );
+                  return;
+                }
+
+                if (_routeAfterGoogleProfile &&
+                    state.status == AppStatus.getProfileError) {
+                  setState(() => _routeAfterGoogleProfile = false);
+                  if (!context.mounted) return;
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const Editprofile(isPostLoginSetup: true),
                     ),
                     (route) => false,
                   );
                 }
               },
               builder: (context, state) {
-                return state.status == AppStatus.loginLoading
+                final loading = state.status == AppStatus.loginLoading ||
+                    (_routeAfterGoogleProfile &&
+                        state.status == AppStatus.getProfileLoading);
+                return loading
                     ? Center(
                         child: CircularProgressIndicator(
                           color: appColor,

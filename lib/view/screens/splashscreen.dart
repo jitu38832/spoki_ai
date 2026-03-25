@@ -1,15 +1,13 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:spokiai/model/checkstatus.dart';
+import 'package:spokiai/model/getprofile.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
+import 'package:spokiai/view/screens/editprofile.dart';
 import 'package:spokiai/view/screens/signup.dart';
 import 'package:spokiai/view/utils/custom_navigator.dart';
-import 'package:spokiai/view/utils/custom_widgets.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import 'package:spokiai/viewmodel/cubit/appcubit.dart';
-import 'login.dart';
 
 class Splashscreen extends StatefulWidget {
   const Splashscreen({super.key});
@@ -20,6 +18,22 @@ class Splashscreen extends StatefulWidget {
 
 class _SplashscreenState extends State<Splashscreen> {
   bool _navigated = false;
+  bool _awaitingProfileForRoute = false;
+
+  void _goHomeOrProfile(BuildContext context, GetProfileResponse? response) {
+    final incomplete = profileNeedsCompletion(response?.data);
+    if (incomplete) {
+      CustomNavigator.pushAndRemoveUntil(
+        context: context,
+        screen: const Editprofile(isPostLoginSetup: true),
+      );
+    } else {
+      CustomNavigator.pushAndRemoveUntil(
+        context: context,
+        screen: const DashboardScreen(),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -35,44 +49,65 @@ class _SplashscreenState extends State<Splashscreen> {
           if (_navigated) return;
 
           if (state.status == AppStatus.checkStatusSuccess) {
-            _navigated = true;
-
-            final CheckStatusResponse response =
-            state.responseData?.response as CheckStatusResponse;
-
             final token =
-                await PreferenceManager.getStringValue(key: "token") ?? "";
+                PreferenceManager.getStringValue(key: "token") ?? "";
 
             if (!mounted) return;
 
-            if (token.isNotEmpty) {
+            if (token.isEmpty) {
+              _navigated = true;
               CustomNavigator.pushAndRemoveUntil(
                 context: context,
-                screen: DashboardScreen(),
-              );
-            } else if (response.key == true) {
-              CustomNavigator.pushAndRemoveUntil(
-                context: context,
-                screen: SignUpScreen(),
+                screen: const SignUpScreen(),
               );
             } else {
-              CustomNavigator.pushAndRemoveUntil(
-                context: context,
-                screen: LoginScreen(),
-              );
+              _awaitingProfileForRoute = true;
+              context.read<AppCubit>().getProfile(token);
             }
+            return;
           }
 
-          // 🔴 Handle API failure
-          if (state.status == AppStatus.checkStatusError) {
+          if (_awaitingProfileForRoute &&
+              state.status == AppStatus.getProfileSuccess) {
+            _awaitingProfileForRoute = false;
             _navigated = true;
-
+            final response =
+                state.responseData?.response as GetProfileResponse;
             if (!mounted) return;
+            _goHomeOrProfile(context, response);
+            return;
+          }
 
+          if (_awaitingProfileForRoute &&
+              state.status == AppStatus.getProfileError) {
+            _awaitingProfileForRoute = false;
+            _navigated = true;
+            if (!mounted) return;
             CustomNavigator.pushAndRemoveUntil(
               context: context,
-              screen: LoginScreen(),
+              screen: const Editprofile(isPostLoginSetup: true),
             );
+            return;
+          }
+
+          if (state.status == AppStatus.checkStatusError) {
+            if (!mounted) return;
+
+            // If the `users/key` check fails but we already have a token,
+            // still route using the profile completeness check.
+            final token =
+                PreferenceManager.getStringValue(key: "token") ?? "";
+
+            if (token.isNotEmpty) {
+              _awaitingProfileForRoute = true;
+              context.read<AppCubit>().getProfile(token);
+            } else {
+              _navigated = true;
+              CustomNavigator.pushAndRemoveUntil(
+                context: context,
+                screen: const SignUpScreen(),
+              );
+            }
           }
         },
         builder: (context, state) {

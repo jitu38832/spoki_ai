@@ -45,7 +45,7 @@ dependencies:
   fluttertoast: ^8.2.12
   http: ^1.4.0
   internet_connection_checker:
-  google_fonts: ^6.2.1
+  google_fonts: ^8.0.2
   carousel_slider: ^5.1.1
   speech_to_text: ^7.3.0
   flutter_tts: ^4.2.3

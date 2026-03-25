@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
-import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/screens/splashscreen.dart';
 import 'package:spokiai/view/screens/story_quiz_screen.dart';
 import 'package:spokiai/view/utils/firebase_options.dart';
