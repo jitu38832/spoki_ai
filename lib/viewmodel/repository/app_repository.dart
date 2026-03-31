@@ -20,6 +20,7 @@ import 'package:spokiai/viewmodel/repository/response_status.dart';
 
 import '../../model/checkstatus.dart';
 import '../../model/privacypolicy.dart';
+import '../../view/utils/preference_manager.dart';
 import 'api_service.dart';
 
 class AppRepository {
@@ -197,11 +198,26 @@ class AppRepository {
     }
   }
 
-  Future<ResponseData> wordMeaning(String token,String word) async {
+  /// Same key as [Editprofile] — "Which language do you speak?"
+  static const String _kProfileSpokenLanguage = 'profile_spoken_language';
+
+  /// Query `?language=hindi` etc.; defaults to `english` if not set in profile.
+  String _dictionaryLanguageQueryParam() {
+    final raw = PreferenceManager.getStringValue(key: _kProfileSpokenLanguage)
+            ?.trim() ??
+        '';
+    if (raw.isEmpty) return 'english';
+    return raw.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  Future<ResponseData> wordMeaning(String token, String word) async {
     try {
-      final response = await ApiService()
-          .sendRequest
-          .get("dictionary/${word}",);
+      final encodedWord = Uri.encodeComponent(word);
+      final language = _dictionaryLanguageQueryParam();
+      final response = await ApiService().sendRequest.get(
+            "dictionary/$encodedWord",
+            queryParameters: <String, dynamic>{'language': language},
+          );
 
       return ResponseData(
           statusCode: response.statusCode,

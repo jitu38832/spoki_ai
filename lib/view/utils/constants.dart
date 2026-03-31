@@ -23,5 +23,5 @@ final RegExp emailRegex = RegExp(
 // const BASEURL = 'http://13.127.143.122:9799/api/v1/';
 
 // Development (local) — same /api/v1/ suffix as production; drop it if your server mounts routes at root
-const BASEURL = 'http://192.168.1.5:9799/api/v1/';
+const BASEURL = 'http://192.168.1.7:9799/api/v1/';
 
