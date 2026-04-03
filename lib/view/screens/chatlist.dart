@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +5,7 @@ import 'package:spokiai/view/screens/chat.dart';
 import '../utils/colors.dart';
 import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
+import '../utils/preference_manager.dart';
 
 class Chatlist extends StatefulWidget {
   const Chatlist({super.key});
@@ -16,48 +15,44 @@ class Chatlist extends StatefulWidget {
 }
 
 class _ChatlistState extends State<Chatlist> {
-  String _selectedGender = 'Male';
-  String _selectedAge = 'Young';
-  String? _selectedImagePath; // Holds path of selected image (asset or file)
+  static const String _kProfileSpokenLanguage = 'profile_spoken_language';
+
+  // Mockup gradients
+  static const Color _headerPink = Color(0xFFD8449E);
+  static const Color _headerBlue = Color(0xFF4E54C8);
+  static const Color _greenStart = Color(0xFF6CB663);
+  static const Color _greenEnd = Color(0xFF8BC34A);
+  static const Color _ctaBlue = Color(0xFF4E54C8);
+  static const Color _ctaPurple = Color(0xFF7B61FF);
+
+  String _selectedGender = 'Female';
+  String? _selectedImagePath;
 
   final TextEditingController nameController = TextEditingController();
 
-  // Predefined images (replace with your actual asset paths)
-  final List<String> boyImages = [
+  /// Female avatars first (row 1), then male (row 2) — 3×2 grid.
+  final List<String> _partnerLooks = [
+    "assets/images/girl1.png",
+    "assets/images/girl2.png",
+    "assets/images/girl3.png",
     "assets/images/boy1.png",
     "assets/images/boy2.png",
     "assets/images/boy3.png",
   ];
-  String? _selectedLanguage;
 
-  final List<String> languages = [
-    "Chinese",
-    "Arabic",
-    "French", // corrected spelling
-    "German",
-    "Indonesian",
-    "Italian",
-    "Japanese",
-    "Korean",
-    "Russian",
-    "Spanish", // corrected spelling
-    "Thai",
-    "Turkish",
-    "Vietnamese",
-    "Persian",
-    "Hindi",
-    "Telugu",
-    "Tamil",
-    "Malayalam",
-    "Kannada",
-    "Bengali",
-  ];
+  @override
+  void initState() {
+    super.initState();
+    if (_partnerLooks.isNotEmpty) {
+      _selectedImagePath = _partnerLooks.first;
+    }
+  }
 
-  final List<String> girlImages = [
-    "assets/images/girl1.png",
-    "assets/images/girl2.png",
-    "assets/images/girl3.png",
-  ];
+  @override
+  void dispose() {
+    nameController.dispose();
+    super.dispose();
+  }
 
   Future<void> pickImageFromGallery() async {
     final ImagePicker picker = ImagePicker();
@@ -65,7 +60,7 @@ class _ChatlistState extends State<Chatlist> {
 
     if (image != null) {
       setState(() {
-        _selectedImagePath = image.path; // Use gallery image
+        _selectedImagePath = image.path;
       });
     }
   }
@@ -76,302 +71,143 @@ class _ChatlistState extends State<Chatlist> {
     });
   }
 
+  String _languageFromProfile() {
+    final raw = PreferenceManager.getStringValue(key: _kProfileSpokenLanguage)
+            ?.trim() ??
+        '';
+    if (raw.isEmpty) return 'english';
+    return raw.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  void _onContinue() {
+    if (nameController.text.trim().isEmpty) {
+      showToast(context: context, message: "Please enter name");
+      return;
+    }
+    if (_selectedImagePath == null) {
+      showToast(context: context, message: "Please select or upload a photo");
+      return;
+    }
+
+    final partnerDetails = <String, dynamic>{
+      "name": nameController.text.trim(),
+      "gender": _selectedGender,
+      "language": _languageFromProfile(),
+      "photo": _selectedImagePath,
+    };
+
+    CustomNavigator.push(
+      context: context,
+      screen: ChatScreen(partnerDetails: partnerDetails),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
     return Scaffold(
-      backgroundColor: Colors.white,
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Card(
-          elevation: 6,
-          shadowColor: appColor.withOpacity(0.8),
-          child: Container(
-            width: double.infinity,
-            height: 56,
-            decoration: BoxDecoration(
-              color: appColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  if (nameController.text.trim().isEmpty) {
-                    showToast(context: context, message: "Please enter name");
-                  } else if (_selectedLanguage == null) {
-                    showToast(
-                        context: context, message: "Please select language");
-                  } else {
-                    Map<String, dynamic> partnerDetails = {
-                      "name": nameController.text.trim(),
-                      "gender": _selectedGender,
-                      // "age": _selectedAge,
-                      "language": _selectedLanguage.toString().toLowerCase(),
-                      "photo": _selectedImagePath,
-                      // Can be asset path or file path
-                    };
-
-                    print("All details");
-                    print(partnerDetails);
-
-                    CustomNavigator.push(
-                      context: context,
-                      screen: ChatScreen(partnerDetails: partnerDetails),
-                    );
-                  }
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Center(
-                  child: textInter(
-                    text: "Next",
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
+      resizeToAvoidBottomInset: true,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFF5F0FF),
+              Color(0xFFEDE7F6),
+              Color(0xFFE8E0F5),
+            ],
           ),
         ),
-      ),
-      appBar: AppBar(
-        title: const Text(
-          "Choose Partner",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-        ),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(15.0),
+        child: SafeArea(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset("assets/images/iv_cartoon.png",
-                          height: 30, width: 30),
-                      const SizedBox(width: 30),
-                      Image.asset("assets/images/iv_cartoon.png",
-                          height: 30, width: 30),
-                    ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: Colors.grey.shade800,
+                    size: 20,
                   ),
+                  onPressed: () => Navigator.maybePop(context),
                 ),
               ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                "Write Your Partner's Name",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 10),
-
-              _buildStoryDescriptionInput(),
-              const SizedBox(height: 24),
-
-              const Text(
-                "Gender",
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              _buildGenderSelection(),
-
-              const SizedBox(height: 20),
-
-              // const Text(
-              //   "Age Stage",
-              //   style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              // ),
-              // const SizedBox(height: 10),
-              // _buildAgeSelection(),
-              //
-              // const SizedBox(height: 20),
-
-              const Text(
-                "Language",
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[400]!),
-                  borderRadius: BorderRadius.circular(12),
-                  color: Colors.white,
-                ),
-                child: DropdownButton<String>(
-                  value: _selectedLanguage,
-                  hint: const Text(
-                    "Select a language",
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                  isExpanded: true,
-                  icon: const Icon(Icons.arrow_drop_down),
-                  underline: const SizedBox(),
-                  // removes default underline
-                  onChanged: (String? newValue) {
-                    setState(() {
-                      _selectedLanguage = newValue;
-                    });
-                  },
-                  items: languages
-                      .map<DropdownMenuItem<String>>((String language) {
-                    return DropdownMenuItem<String>(
-                      value: language,
-                      child: Text(language),
-                    );
-                  }).toList(),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                "Choose a photo for your Character",
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Column(
-                    children: const [
-                      Icon(Icons.upload, size: 40, color: Colors.blue),
-                      Text("Upload"),
-                    ],
-                  ),
-                  const Text(
-                    "OR",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  GestureDetector(
-                    onTap: pickImageFromGallery,
-                    child: Column(
-                      children: const [
-                        Icon(Icons.photo_library,
-                            size: 40, color: Colors.lightBlue),
-                        Text("Choose"),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-              // Boy Images
-              // const Text("Boys", style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 100,
-                width: MediaQuery.of(context).size.width,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: boyImages.length,
-                  itemBuilder: (context, index) {
-                    String path = boyImages[index];
-                    bool isSelected = _selectedImagePath == path;
-                    return GestureDetector(
-                      onTap: () => selectPredefinedImage(path),
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected ? appColor : Colors.transparent,
-                            width: isSelected ? 2 : 0,
-                          ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, viewportConstraints) {
+                    const horizontalPadding = 20.0;
+                    final contentWidth =
+                        viewportConstraints.maxWidth - horizontalPadding * 2;
+                    return SingleChildScrollView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding:
+                          const EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, 8),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: viewportConstraints.maxHeight,
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.asset(
-                            path,
-                            width: MediaQuery.of(context).size.width * 0.28,
-                            height: 90,
-                            fit: BoxFit.cover,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildHeaderBanner(),
+                                const SizedBox(height: 12),
+                                _buildSectionLabel('Partner Name'),
+                                const SizedBox(height: 6),
+                                _buildNameField(),
+                                const SizedBox(height: 12),
+                                _buildSectionLabel('Gender'),
+                                const SizedBox(height: 8),
+                                _buildGenderRow(),
+                                const SizedBox(height: 10),
+                                _buildSectionLabel('Select a Partner Look'),
+                                const SizedBox(height: 6),
+                                if (contentWidth > 0)
+                                  _buildPartnerLookGrid(contentWidth),
+                              ],
+                            ),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const SizedBox(height: 8),
+                                _buildOrDivider(),
+                                const SizedBox(height: 6),
+                                Center(
+                                  child: Text(
+                                    'Add Your Partner Photo',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                _buildGalleryButton(),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     );
                   },
                 ),
               ),
-
-              // const SizedBox(height: 20),
-              //
-              // // Girl Images
-              // const Text("Girls", style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 100,
-                width: MediaQuery.of(context).size.width,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: girlImages.length,
-                  itemBuilder: (context, index) {
-                    String path = girlImages[index];
-                    bool isSelected = _selectedImagePath == path;
-                    return GestureDetector(
-                      onTap: () => selectPredefinedImage(path),
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected ? appColor : Colors.transparent,
-                            width: isSelected ? 2 : 0,
-                          ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.asset(
-                            path,
-                            width: MediaQuery.of(context).size.width * 0.28,
-                            height: 90,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 12 + bottomInset),
+                child: _buildContinueButton(),
               ),
-
-              const SizedBox(height: 30),
-
-              // Selected Image Preview
-              if (_selectedImagePath != null)
-                Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: _selectedImagePath!.startsWith("assets/")
-                        ? Image.asset(
-                            _selectedImagePath!,
-                            height: 100,
-                            width: MediaQuery.of(context).size.width * 0.28,
-                            fit: BoxFit.cover,
-                          )
-                        : Image.file(
-                            File(_selectedImagePath!),
-                            height: 100,
-                            width: MediaQuery.of(context).size.width * 0.28,
-                            fit: BoxFit.cover,
-                          ),
-                  ),
-                ),
-
-              const SizedBox(height: 40),
             ],
           ),
         ),
@@ -379,17 +215,58 @@ class _ChatlistState extends State<Chatlist> {
     );
   }
 
-  Widget _buildStoryDescriptionInput() {
+  Widget _buildHeaderBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [_headerPink, _headerBlue],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _headerBlue.withValues(alpha: 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Text(
+        'Start Talking with Spoki AI',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+          height: 1.25,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.inter(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: Colors.grey.shade600,
+      ),
+    );
+  }
+
+  Widget _buildNameField() {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(color: Colors.grey[300]!, width: 2),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300, width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 10,
-            spreadRadius: 1,
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
@@ -397,129 +274,333 @@ class _ChatlistState extends State<Chatlist> {
       child: TextField(
         controller: nameController,
         maxLines: 1,
+        textInputAction: TextInputAction.done,
         decoration: InputDecoration(
-          hintText: "Enter name",
-          hintStyle: GoogleFonts.roboto(
-            fontSize: 14,
+          hintText: 'Enter name (e.g. Alex)',
+          hintStyle: GoogleFonts.inter(
+            fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.grey[600],
+            color: Colors.grey.shade400,
           ),
           border: InputBorder.none,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
-        style: GoogleFonts.roboto(
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-          color: Colors.black,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Colors.black87,
         ),
       ),
     );
   }
 
-  Widget _buildGenderSelection() {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Row(
-        children: [
-          Expanded(
-              child: _buildGenderButton('Male',
-                  isSelected: _selectedGender == 'Male')),
-          const SizedBox(width: 12),
-          Expanded(
-              child: _buildGenderButton('Female',
-                  isSelected: _selectedGender == 'Female')),
-          // const SizedBox(width: 12),
-          // Expanded(
-          //   child: _buildGenderButton(
-          //     'Other',
-          //     isSelected: _selectedGender == 'Other',
-          //   ),
-          // ),
-        ],
-      ),
+  Widget _buildGenderRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildGenderChip(
+            label: 'Male',
+            isMale: true,
+            isSelected: _selectedGender == 'Male',
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildGenderChip(
+            label: 'Female',
+            isMale: false,
+            isSelected: _selectedGender == 'Female',
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildGenderButton(String label,
-      {required bool isSelected, bool hasLock = false}) {
-    return GestureDetector(
-      onTap: hasLock
-          ? null
-          : () {
-              setState(() {
-                _selectedGender = label;
-              });
-            },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? orangeColor : appColor,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            textInter(
-              text: label,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+  Widget _buildGenderChip({
+    required String label,
+    required bool isMale,
+    required bool isSelected,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => setState(() => _selectedGender = label),
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: isSelected
+                ? const LinearGradient(
+                    colors: [_greenStart, _greenEnd],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  )
+                : null,
+            color: isSelected ? null : Colors.white,
+            border: Border.all(
+              color: isSelected
+                  ? Colors.transparent
+                  : Colors.grey.shade300,
+              width: 1.2,
             ),
-            if (hasLock)
-              const Padding(
-                padding: EdgeInsets.only(left: 6),
-                child: Icon(Icons.lock, size: 16, color: Colors.white70),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: _greenStart.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isSelected)
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.check_rounded,
+                    size: 16,
+                    color: _greenStart,
+                  ),
+                )
+              else
+                Icon(
+                  isMale ? Icons.male_rounded : Icons.female_rounded,
+                  size: 22,
+                  color: Colors.grey.shade500,
+                ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : Colors.grey.shade500,
+                ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildAgeSelection() {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Row(
-        children: [
-          Expanded(
-              child: _buildAgeButton('Young',
-                  isSelected: _selectedAge == 'Young')),
-          const SizedBox(width: 12),
-          Expanded(
-              child: _buildAgeButton('Adult',
-                  isSelected: _selectedAge == 'Adult')),
-          const SizedBox(width: 12),
-          Expanded(
-              child: _buildAgeButton('Old', isSelected: _selectedAge == 'Old')),
-        ],
-      ),
-    );
-  }
+  static const int _gridCrossAxisCount = 3;
+  static const int _gridRowCount = 2;
 
-  Widget _buildAgeButton(String label, {required bool isSelected}) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedAge = label;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? orangeColor : appColor,
-          borderRadius: BorderRadius.circular(8),
+  /// Height derived from [width] so the grid scrolls with the form when the keyboard is open.
+  Widget _buildPartnerLookGrid(double width) {
+    const gap = 10.0;
+    if (width <= 0) {
+      return const SizedBox.shrink();
+    }
+    final cellW =
+        (width - gap * (_gridCrossAxisCount - 1)) / _gridCrossAxisCount;
+    final gridHeight =
+        cellW * _gridRowCount + gap * (_gridRowCount - 1);
+
+    return SizedBox(
+      height: gridHeight,
+      child: GridView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _gridCrossAxisCount,
+          crossAxisSpacing: gap,
+          mainAxisSpacing: gap,
+          childAspectRatio: 1,
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            textInter(
-              text: label,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+        itemCount: _partnerLooks.length,
+        itemBuilder: (context, index) {
+          final path = _partnerLooks[index];
+          final isSelected = _selectedImagePath == path;
+          return GestureDetector(
+            onTap: () => selectPredefinedImage(path),
+            child: Stack(
+              clipBehavior: Clip.none,
+              fit: StackFit.expand,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? _greenStart : Colors.transparent,
+                      width: isSelected ? 3 : 0,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.asset(
+                      path,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.grey.shade200,
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.person,
+                          size: 28,
+                          color: Colors.grey.shade400,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: _greenStart,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildOrDivider() {
+    return Row(
+      children: [
+        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'OR',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade500,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+      ],
+    );
+  }
+
+  Widget _buildGalleryButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: pickImageFromGallery,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: const LinearGradient(
+              colors: [_ctaBlue, _ctaPurple],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _ctaPurple.withValues(alpha: 0.35),
+                blurRadius: 14,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.photo_camera_rounded,
+                    color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Choose from Gallery',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContinueButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _onContinue,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: LinearGradient(
+              colors: [appColor, appColor.withValues(alpha: 0.85)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: appColor.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: textInter(
+                text: 'Start Talking',
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
         ),
       ),
     );

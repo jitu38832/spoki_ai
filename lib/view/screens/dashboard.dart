@@ -4,7 +4,6 @@ import 'package:spokiai/view/screens/story_quiz_screen.dart';
 import 'package:spokiai/view/screens/storyhistory.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'home.dart';
-import 'chat.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int? initialTabIndex; // ✅ Added to select specific tab

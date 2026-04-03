@@ -1,14 +1,25 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:socket_io_client/socket_io_client.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/socket.dart'; // Adjust path if needed
+import 'package:spokiai/view/screens/voice_settings.dart';
 import 'package:translator/translator.dart';
 import '../utils/colors.dart'; // Make sure appColor is defined
+
+/// Socket / JSON fields may be null or non-String; avoids cast and null errors.
+String? _coerceTrimmedString(dynamic value) {
+  if (value == null) return null;
+  final s = value is String ? value : value.toString();
+  final t = s.trim();
+  return t.isEmpty ? null : t;
+}
 
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> partnerDetails;
@@ -42,6 +53,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showSuggestions = false;
   bool _isBulbActive = false;
   String? _lastAiMessage;
+
+  /// User message ids with AI feedback panel expanded below the bubble.
+  final Set<String> _expandedAiFeedbackIds = {};
 
   // For 25-second continuous listening
   Timer? _countdownTimer;
@@ -90,9 +104,12 @@ class _ChatScreenState extends State<ChatScreen> {
     _flutterTts = FlutterTts();
     _initializeTts();
     _initializeSpeech();
+    _textController.addListener(_onInputTextChanged);
 
-    // Send real partner name & gender once socket connects
+    // New chat session (incl. new partner after leaving chat): always handshake again.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      socketService.resetInitialFlag();
+
       // Already connected → send immediately
       if (socketService.isConnected) {
         socketService.sendInitialGreetingWithPartnerDetails(widget.partnerDetails);
@@ -104,7 +121,6 @@ class _ChatScreenState extends State<ChatScreen> {
         if (mounted) {
           socketService.sendInitialGreetingWithPartnerDetails(widget.partnerDetails);
         }
-        // Clean up listener after first use
         socketService.socket.off('connect', onFirstConnect);
       }
 
@@ -116,10 +132,10 @@ class _ChatScreenState extends State<ChatScreen> {
       print('Received from server: $data');
 
       if (data is! Map) return;
-      final type = data['type'] as String?;
-      final messageText = (data['message'] as String?)?.trim();
+      final type = _coerceTrimmedString(data['type']);
+      final messageText = _coerceTrimmedString(data['message']);
 
-      if (messageText == null || messageText.isEmpty) return;
+      if (messageText == null) return;
       if (!mounted) return;
 
       // Skip our own initialization echo
@@ -130,12 +146,15 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      String? exampleText = (data['example'] as String?)?.trim();
-      if (exampleText != null && exampleText.isEmpty) exampleText = null;
+      final exampleText = _coerceTrimmedString(data['example']);
 
       setState(() {
         if (type == 'user') {
-          _messages.add(ChatMessage(text: messageText, isUser: true));
+          _messages.add(ChatMessage(
+            text: messageText,
+            isUser: true,
+            id: _newChatMessageId(),
+          ));
         } else if (type == 'ai') {
           // Removed skipping of generic welcome → now shows first message
           _messages.add(ChatMessage(
@@ -143,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> {
             isUser: false,
             hasAudio: true,
             example: exampleText,
+            id: _newChatMessageId(),
           ));
           _lastAiMessage = messageText;
 
@@ -161,6 +181,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _onInputTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  String _newChatMessageId() =>
+      '${DateTime.now().microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
+
   Future<void> _initializeTts() async {
     await _flutterTts.setVolume(1.0);
 
@@ -174,10 +201,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final voices = await _flutterTts.getVoices;
 
     if (voices.isNotEmpty) {
-      final genderLower = (widget.partnerDetails["gender"] as String?)
-          ?.toLowerCase()
-          .trim() ??
-          "male";
+      final genderRaw =
+          widget.partnerDetails["gender"]?.toString().trim().toLowerCase();
+      final genderLower = genderRaw == "female" ? "female" : "male";
 
       print("Trying to select friendly voice for gender: $genderLower");
 
@@ -222,7 +248,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           pattern.contains("boy") ||
                           pattern.contains("wavenet") ||
                           pattern.contains("neural")))) {
-                await _flutterTts.setVoice({"name": voice["name"], "locale": locale});
+                await _flutterTts.setVoice({
+                  "name": (voice["name"] ?? "").toString(),
+                  "locale": locale,
+                });
                 print("Selected friendly/natural voice: ${voice["name"]} ($locale)");
                 voiceSet = true;
                 break;
@@ -238,7 +267,10 @@ class _ChatScreenState extends State<ChatScreen> {
           if (voice is Map && voice["locale"] != null) {
             final locale = voice["locale"].toString();
             if (locale.startsWith(languageCode.split('-').first)) {
-              await _flutterTts.setVoice({"name": voice["name"], "locale": locale});
+              await _flutterTts.setVoice({
+                "name": (voice["name"] ?? "").toString(),
+                "locale": locale,
+              });
               print("Fallback voice: ${voice["name"]} ($locale)");
               break;
             }
@@ -399,6 +431,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  /// Single quick reply from latest AI `example` (backend controls length); local default if none.
   List<String> _generateSuggestions() {
     String? latestExample;
     for (final msg in _messages.reversed) {
@@ -409,21 +442,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     if (latestExample == null || latestExample.isEmpty) {
-      return [
-        "Hi, let's start learning!",
-        "Can you teach me present simple tense?",
-        "Please give me an example.",
-        "How do I introduce myself?"
-      ];
+      return ["Hi, let's start learning!"];
     }
 
     return [latestExample];
-  }
-
-  String _shortenForReply(String example) {
-    final words = example.split(' ');
-    if (words.length <= 8) return example;
-    return words.take(8).join(' ') + '...';
   }
 
   void _toggleSuggestions() {
@@ -436,7 +458,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _showTranslationDialog(String englishText) async {
     if (englishText.trim().isEmpty || !mounted) return;
 
-    final partnerLanguageName = widget.partnerDetails["language"] ?? "English";
+    final partnerLanguageName =
+        _coerceTrimmedString(widget.partnerDetails["language"]) ?? "English";
     final targetCode = _getLocaleFromPartnerLanguage(partnerLanguageName);
 
     if (targetCode == "en-US") {
@@ -452,7 +475,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final translation = await _translator.translate(englishText.trim(), to: targetCode.split('-').first);
-      final translatedText = translation.text;
+      final rawTranslated = translation.text;
+      final translatedText = _coerceTrimmedString(rawTranslated) ?? englishText.trim();
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -619,9 +643,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final voices = await _flutterTts.getVoices;
     if (voices.isNotEmpty) {
       for (var voice in voices) {
-        if (voice is Map && (voice["locale"] as String?)?.startsWith("en") == true) {
+        if (voice is Map &&
+            voice["locale"] != null &&
+            voice["locale"].toString().startsWith("en")) {
           await _flutterTts.setVoice({
-            "name": voice["name"].toString(),
+            "name": (voice["name"] ?? "").toString(),
             "locale": voice["locale"].toString(),
           });
           break;
@@ -640,6 +666,17 @@ class _ChatScreenState extends State<ChatScreen> {
         _currentlySpeakingText = null;
       });
     }
+  }
+
+  void _goToDashboard() {
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const DashboardScreen(),
+      ),
+      (route) => false,
+    );
   }
 
   void _scrollToBottom() {
@@ -678,6 +715,7 @@ class _ChatScreenState extends State<ChatScreen> {
     socketService.socket.off('message');
     _flutterTts.stop();
     _speech.stop();
+    _textController.removeListener(_onInputTextChanged);
     _scrollController.dispose();
     _textController.dispose();
     super.dispose();
@@ -686,53 +724,127 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final suggestions = _generateSuggestions();
+    final partnerPhoto = widget.partnerDetails["photo"]?.toString();
+    final partnerName = "${widget.partnerDetails["name"] ?? ""} AI Partner";
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (didPop) return;
+        _goToDashboard();
+      },
+      child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        leadingWidth: 42,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back, size: 24),
+          onPressed: _goToDashboard,
         ),
+        titleSpacing: 0,
         title: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             CircleAvatar(
-              radius: 18,
+              radius: 20,
               backgroundColor: appColor,
-              backgroundImage: widget.partnerDetails["photo"] != null
-                  ? (widget.partnerDetails["photo"].toString().startsWith("assets/")
-                  ? AssetImage(widget.partnerDetails["photo"]) as ImageProvider
-                  : FileImage(File(widget.partnerDetails["photo"])))
+              backgroundImage: partnerPhoto != null
+                  ? (partnerPhoto.startsWith("assets/")
+                      ? AssetImage(partnerPhoto) as ImageProvider
+                      : FileImage(File(partnerPhoto)))
                   : null,
-              child: widget.partnerDetails["photo"] == null
+              child: partnerPhoto == null
                   ? Icon(
-                widget.partnerDetails["gender"]?.toString().toLowerCase() == "female"
-                    ? Icons.woman
-                    : Icons.man,
-                color: Colors.white,
-                size: 24,
-              )
+                      widget.partnerDetails["gender"]?.toString().toLowerCase() ==
+                              "female"
+                          ? Icons.woman
+                          : Icons.man,
+                      color: Colors.white,
+                      size: 24,
+                    )
                   : null,
             ),
-            const SizedBox(width: 12),
-            Text(
-              "${widget.partnerDetails["name"] ?? ""} AI Partner",
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.black,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    partnerName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF23C552),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        "ONLINE",
+                        style: GoogleFonts.roboto(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[500],
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
+                  )
+                ],
               ),
             ),
           ],
         ),
-        centerTitle: true,
-        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, size: 28),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const VoiceSettingsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+        elevation: 1,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Row(
+              children: [
+                Expanded(child: Divider(color: Colors.grey[350])),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Text(
+                    "Today",
+                    style: GoogleFonts.roboto(
+                      fontSize: 22,
+                      color: Colors.grey[400],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: Colors.grey[350])),
+              ],
+            ),
+          ),
           Expanded(
             child: _messages.isEmpty
                 ? const Center(
@@ -747,10 +859,14 @@ class _ChatScreenState extends State<ChatScreen> {
             )
                 : ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               itemCount: _messages.length,
               itemBuilder: (context, index) {
-                return _buildMessageBubble(_messages[index]);
+                final msg = _messages[index];
+                return KeyedSubtree(
+                  key: ValueKey(msg.id),
+                  child: _buildMessageBubble(msg),
+                );
               },
             ),
           ),
@@ -830,7 +946,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       Icon(Icons.lightbulb, color: Colors.amber[800], size: 20),
                       const SizedBox(width: 6),
                       Text(
-                        "Quick Replies",
+                        "Quick reply",
                         style: TextStyle(
                           color: Colors.amber[900],
                           fontWeight: FontWeight.w600,
@@ -874,13 +990,13 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
 
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: Colors.grey[300]!),
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Colors.grey[300]!, width: 1),
               ),
               child: Row(
                 children: [
@@ -888,9 +1004,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     onTap: _toggleSuggestions,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 250),
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(9),
                       decoration: BoxDecoration(
-                        color: _isBulbActive ? Colors.amber : Colors.grey[300],
+                        color: _isBulbActive ? const Color(0xFFFFD54F) : const Color(0xFFFFF3CD),
                         shape: BoxShape.circle,
                         boxShadow: [
                           if (_isBulbActive)
@@ -903,13 +1019,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       child: Icon(
                         Icons.lightbulb_outline,
-                        color: _isBulbActive ? Colors.amber[900] : Colors.grey[700],
-                        size: 24,
+                        color: _isBulbActive ? Colors.amber[900] : Colors.amber[700],
+                        size: 22,
                       ),
                     ),
                   ),
 
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
 
                   Expanded(
                     child: TextField(
@@ -918,16 +1034,20 @@ class _ChatScreenState extends State<ChatScreen> {
                       maxLines: 5,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _sendTextMessage(),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: "Type a message...",
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                        hintStyle: GoogleFonts.roboto(
+                          color: Colors.grey[500],
+                          fontSize: 16,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                       ),
-                      style: const TextStyle(fontSize: 16),
+                      style: const TextStyle(fontSize: 16, color: Colors.black87),
                     ),
                   ),
 
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
 
                   if (_textController.text.trim().isEmpty)
                     GestureDetector(
@@ -936,12 +1056,12 @@ class _ChatScreenState extends State<ChatScreen> {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: _isListening ? Colors.redAccent : appColor,
+                          color: _isListening ? Colors.redAccent : const Color(0xFF3BA4E8),
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: (_isListening ? Colors.redAccent : appColor).withOpacity(0.4),
-                              blurRadius: _isListening ? 30 : 15,
+                              color: (_isListening ? Colors.redAccent : const Color(0xFF3BA4E8)).withOpacity(0.35),
+                              blurRadius: _isListening ? 26 : 12,
                             ),
                           ],
                         ),
@@ -954,7 +1074,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     )
                   else
                     IconButton(
-                      icon: Icon(Icons.send, color: appColor),
+                      icon: const Icon(Icons.send, color: Color(0xFF3BA4E8)),
                       onPressed: _sendTextMessage,
                     ),
                 ],
@@ -963,134 +1083,658 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
+    ),
     );
+  }
+
+  void _toggleAiFeedbackForMessage(String messageId) {
+    setState(() {
+      if (_expandedAiFeedbackIds.contains(messageId)) {
+        _expandedAiFeedbackIds.remove(messageId);
+      } else {
+        _expandedAiFeedbackIds.add(messageId);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   Widget _buildMessageBubble(ChatMessage message) {
     final isUser = message.isUser;
     final isThisMessageSpeaking = _currentlySpeakingText == message.text.trim();
+    final partnerPhoto = widget.partnerDetails["photo"]?.toString();
+    final showAiFeedbackPanel =
+        isUser && _expandedAiFeedbackIds.contains(message.id);
 
     return Padding(
       padding: EdgeInsets.only(
-        left: isUser ? 80 : 0,
-        right: isUser ? 0 : 80,
-        bottom: 20,
+        left: isUser ? 72 : 0,
+        right: isUser ? 0 : 72,
+        bottom: 14,
       ),
       child: Column(
         crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (!isUser)
-            Padding(
-              padding: const EdgeInsets.only(left: 8, bottom: 8),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: appColor,
-                    backgroundImage: widget.partnerDetails["photo"] != null
-                        ? (widget.partnerDetails["photo"].toString().startsWith("assets/")
-                        ? AssetImage(widget.partnerDetails["photo"]) as ImageProvider
-                        : FileImage(File(widget.partnerDetails["photo"])))
-                        : null,
-                    child: widget.partnerDetails["photo"] == null
-                        ? Icon(
-                      widget.partnerDetails["gender"]?.toString().toLowerCase() == "female"
-                          ? Icons.woman
-                          : Icons.man,
-                      color: Colors.white,
-                      size: 24,
-                    )
-                        : null,
-                  ),
-                  const SizedBox(width: 12),
+          Row(
+            mainAxisAlignment:
+                isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            children: [
+              if (!isUser)
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor: appColor,
+                  backgroundImage: partnerPhoto != null
+                      ? (partnerPhoto.startsWith("assets/")
+                          ? AssetImage(partnerPhoto) as ImageProvider
+                          : FileImage(File(partnerPhoto)))
+                      : null,
+                  child: partnerPhoto == null
+                      ? Icon(
+                          widget.partnerDetails["gender"]
+                                      ?.toString()
+                                      .toLowerCase() ==
+                                  "female"
+                              ? Icons.woman
+                              : Icons.man,
+                          color: Colors.white,
+                          size: 18,
+                        )
+                      : null,
+                ),
+              if (!isUser) const SizedBox(width: 8),
+              _smallActionChip(
+                label: isThisMessageSpeaking ? "Stop" : "Listen",
+                icon: isThisMessageSpeaking ? Icons.stop : Icons.volume_up,
+                onTap: () {
+                  if (isThisMessageSpeaking) {
+                    _stopSpeaking();
+                  } else {
+                    _speakInEnglish(message.text);
+                  }
+                },
+              ),
+              if (isUser) const SizedBox(width: 8),
+              if (isUser)
+                const CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Color(0xFFE3F2FD),
+                  child: Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
 
-                  GestureDetector(
-                    onTap: () {
-                      if (isThisMessageSpeaking) {
-                        _stopSpeaking();
-                      } else {
-                        _speakInEnglish(message.text);
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isThisMessageSpeaking ? Colors.red[50] : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isThisMessageSpeaking ? Icons.stop : Icons.volume_up,
-                            size: 18,
-                            color: isThisMessageSpeaking ? Colors.red : Colors.grey[700],
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            isThisMessageSpeaking ? "Stop" : "Listen",
-                            style: const TextStyle(fontSize: 13, color: Colors.grey),
-                          ),
-                        ],
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isUser ? 10 : 14,
+              vertical: isUser ? 10 : 12,
+            ),
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+            decoration: BoxDecoration(
+              gradient: isUser
+                  ? const LinearGradient(
+                      colors: [Color(0xFF4F6BED), Color(0xFF3B56D6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              color: isUser ? null : const Color(0xFFF3F3F3),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(14),
+                topRight: const Radius.circular(14),
+                bottomLeft: Radius.circular(isUser ? 14 : 6),
+                bottomRight: Radius.circular(isUser ? 6 : 14),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment:
+                  isUser ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message.text,
+                  textAlign: isUser ? TextAlign.center : TextAlign.start,
+                  style: GoogleFonts.roboto(
+                    fontSize: 16,
+                    color: isUser ? Colors.white : Colors.black87,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (!isUser) ...[
+                  const SizedBox(height: 10),
+                  Center(
+                    child: GestureDetector(
+                      onTap: () async {
+                        if (isThisMessageSpeaking) {
+                          await _stopSpeaking();
+                        } else {
+                          await _showTranslationDialog(message.text);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.translate, size: 14, color: appColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              "Translate",
+                              style: GoogleFonts.roboto(
+                                fontSize: 12,
+                                color: appColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-
-                  const SizedBox(width: 10),
-
-                  GestureDetector(
-                    onTap: () async {
-                      if (isThisMessageSpeaking) {
-                        await _stopSpeaking();
-                      } else {
-                        await _showTranslationDialog(message.text);
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isThisMessageSpeaking ? Colors.blue[50] : appColor.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: appColor.withOpacity(0.4)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.translate, size: 18, color: appColor),
-                          const SizedBox(width: 6),
-                          Text(
-                            isThisMessageSpeaking ? "Stop" : "Translate",
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: appColor,
-                            ),
+                ] else ...[
+                  const SizedBox(height: 10),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _toggleAiFeedbackForMessage(message.id),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: showAiFeedbackPanel
+                                ? appColor
+                                : Colors.transparent,
+                            width: 1.5,
                           ),
-                        ],
+                        ),
+                        child: Text(
+                          "AI feedback",
+                          style: GoogleFonts.roboto(
+                            fontSize: 12,
+                            color: appColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
+                    ),
+                  ),
+                ]
+              ],
+            ),
+          ),
+          if (showAiFeedbackPanel)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: _buildAiFeedbackCardsStack(
+                partnerPhoto: partnerPhoto,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // --- AI feedback expansion (dark cards, mock content matching product mockup) ---
+  static const Color _fbCardBg = Color(0xFF2C2C2E);
+  static const Color _fbRowBg = Color(0xFF3A3A3C);
+  static const Color _fbPurple = Color(0xFF7B61FF);
+  static const Color _fbGrammarGreen = Color(0xFF1B5E20);
+  static const Color _fbGrammarGreenText = Color(0xFF69F0AE);
+
+  Widget _buildAiFeedbackCardsStack({required String? partnerPhoto}) {
+    final maxW = MediaQuery.of(context).size.width * 0.75;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxW),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildGrammarFeedbackCard(),
+          const SizedBox(height: 12),
+          _buildPronunciationFeedbackCard(partnerPhoto),
+          const SizedBox(height: 12),
+          _buildVocabularyFeedbackCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeedbackCategoryChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: _fbPurple,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.roboto(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGrammarFeedbackCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: _fbCardBg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFeedbackCategoryChip('Grammar'),
+          const SizedBox(height: 14),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 28,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 22,
+                        height: 22,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE53935),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, color: Colors.white, size: 14),
+                      ),
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      Container(
+                        width: 22,
+                        height: 22,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF43A047),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.check, color: Colors.white, size: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _fbRowBg,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text.rich(
+                          TextSpan(
+                            style: GoogleFonts.roboto(
+                              fontSize: 14,
+                              height: 1.45,
+                              color: Colors.white,
+                            ),
+                            children: const [
+                              TextSpan(text: 'I enjoy '),
+                              TextSpan(
+                                text: 'watch',
+                                style: TextStyle(
+                                  color: Color(0xFFEF5350),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: ' many '),
+                              TextSpan(
+                                text: 'movie',
+                                style: TextStyle(
+                                  color: Color(0xFFEF5350),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(
+                                  text: ' of different language and '),
+                              TextSpan(
+                                text: 'it culture',
+                                style: TextStyle(
+                                  color: Color(0xFFEF5350),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: '. It '),
+                              TextSpan(
+                                text: 'make',
+                                style: TextStyle(
+                                  color: Color(0xFFEF5350),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: ' me '),
+                              TextSpan(
+                                text: 'know world',
+                                style: TextStyle(
+                                  color: Color(0xFFEF5350),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: ' more '),
+                              TextSpan(
+                                text: 'better',
+                                style: TextStyle(
+                                  color: Color(0xFFEF5350),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: '!'),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _fbGrammarGreen,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text.rich(
+                          TextSpan(
+                            style: GoogleFonts.roboto(
+                              fontSize: 14,
+                              height: 1.45,
+                              color: Colors.white,
+                            ),
+                            children: const [
+                              TextSpan(text: 'I enjoy '),
+                              TextSpan(
+                                text: 'watching',
+                                style: TextStyle(
+                                  color: _fbGrammarGreenText,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: ' many '),
+                              TextSpan(
+                                text: 'movies in',
+                                style: TextStyle(
+                                  color: _fbGrammarGreenText,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(
+                                  text:
+                                      ' different languages and '),
+                              TextSpan(
+                                text: 'learning about their cultures',
+                                style: TextStyle(
+                                  color: _fbGrammarGreenText,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: '. It '),
+                              TextSpan(
+                                text: 'helps me understand',
+                                style: TextStyle(
+                                  color: _fbGrammarGreenText,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: ' the world '),
+                              TextSpan(
+                                text: 'better',
+                                style: TextStyle(
+                                  color: _fbGrammarGreenText,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: '!'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPronunciationFeedbackCard(String? partnerPhoto) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: _fbCardBg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFeedbackCategoryChip('Pronunciation'),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'understand',
+                      style: GoogleFonts.roboto(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'uhn-duh-stand',
+                      style: GoogleFonts.roboto(
+                        fontSize: 14,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '20%',
+                      style: GoogleFonts.roboto(
+                        fontSize: 36,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFEF5350),
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Needs practice',
+                      style: GoogleFonts.roboto(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFEF5350),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: _fbRowBg,
+                    backgroundImage: partnerPhoto != null
+                        ? (partnerPhoto.startsWith('assets/')
+                            ? AssetImage(partnerPhoto) as ImageProvider
+                            : FileImage(File(partnerPhoto)))
+                        : null,
+                    child: partnerPhoto == null
+                        ? Icon(
+                            widget.partnerDetails['gender']
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    'female'
+                                ? Icons.woman
+                                : Icons.man,
+                            color: Colors.white54,
+                            size: 24,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: const BoxDecoration(
+                      color: _fbRowBg,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.graphic_eq,
+                      color: const Color(0xFF69F0AE),
+                      size: 22,
                     ),
                   ),
                 ],
               ),
-            ),
-
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-            decoration: BoxDecoration(
-              color: isUser ? appColor : Colors.grey[100],
+            ],
+          ),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: Colors.white,
               borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              message.text,
-              style: GoogleFonts.roboto(
-                fontSize: 16,
-                color: isUser ? Colors.white : Colors.black87,
-                height: 1.4,
+              child: InkWell(
+                onTap: () {},
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Text(
+                    'Practice',
+                    style: GoogleFonts.roboto(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildVocabularyFeedbackCard() {
+    Widget row(String from, String to, {bool isLast = false}) {
+      return Container(
+        margin: EdgeInsets.only(bottom: isLast ? 0 : 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: _fbRowBg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: Text(
+                from,
+                style: GoogleFonts.roboto(
+                  fontSize: 13,
+                  color: Colors.white,
+                  height: 1.3,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Icon(Icons.arrow_forward, color: Colors.white54, size: 18),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                to,
+                style: GoogleFonts.roboto(
+                  fontSize: 13,
+                  color: _fbGrammarGreenText,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+              ),
+            ),
+            Icon(Icons.bookmark_border, color: Colors.white70, size: 20),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: _fbCardBg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFeedbackCategoryChip('Vocabulary'),
+          const SizedBox(height: 14),
+          row('Watching a lot of movies', 'Exploring movies'),
+          row('Multiple languages', 'Diverse languages', isLast: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _smallActionChip({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEDEDED),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: Colors.grey[700]),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: GoogleFonts.roboto(
+                fontSize: 12,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1126,6 +1770,7 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class ChatMessage {
+  final String id;
   final String text;
   final bool isUser;
   final bool hasAudio;
@@ -1136,5 +1781,7 @@ class ChatMessage {
     required this.isUser,
     this.hasAudio = false,
     this.example,
-  });
+    String? id,
+  }) : id = id ??
+            '${DateTime.now().microsecondsSinceEpoch}_${text.hashCode}';
 }

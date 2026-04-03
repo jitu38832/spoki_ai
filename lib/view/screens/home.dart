@@ -168,17 +168,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Gift Icon
-              InkWell(
-                onTap: () {
-                  // navigate to gifts or rewards
-                },
-                child: const Icon(
-                  Icons.card_giftcard,
-                  size: 30,
-                  color: Colors.redAccent,
-                ),
-              ),
+              // Right header icon (gift / subscription) — commented out per product request
+              // InkWell(
+              //   onTap: () {
+              //     // navigate to gifts or rewards
+              //   },
+              //   child: const Icon(
+              //     Icons.card_giftcard,
+              //     size: 30,
+              //     color: Colors.redAccent,
+              //   ),
+              // ),
+              const SizedBox(width: 30),
             ],
           ),
 

@@ -9,8 +9,17 @@ class SocketService {
   bool get isConnected => socket.connected;
 
   bool _hasSentInitialGreeting = false;
+  bool _socketConfigured = false;
 
   void initSocket() {
+    if (_socketConfigured) {
+      if (!socket.connected) {
+        socket.connect();
+      }
+      return;
+    }
+    _socketConfigured = true;
+
     socket = IO.io(
       'ws://3.109.110.211',
       IO.OptionBuilder()
