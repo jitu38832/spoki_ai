@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:socket_io_client/socket_io_client.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:spokiai/model/aifeedback.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/socket.dart'; // Adjust path if needed
 import 'package:spokiai/view/screens/voice_settings.dart';
@@ -57,6 +58,12 @@ class _ChatScreenState extends State<ChatScreen> {
   /// User message ids with AI feedback panel expanded below the bubble.
   final Set<String> _expandedAiFeedbackIds = {};
 
+  /// Last opened feedback request (server responses are applied to this message id).
+  String? _pendingAiFeedbackMessageId;
+  final Map<String, AiFeedbackAiPayload> _aiFeedbackResultByMessageId = {};
+  final Map<String, String> _aiFeedbackErrorByMessageId = {};
+  final Set<String> _aiFeedbackLoadingIds = {};
+
   // For 25-second continuous listening
   Timer? _countdownTimer;
   int _remainingSeconds = 25;
@@ -89,6 +96,133 @@ class _ChatScreenState extends State<ChatScreen> {
       case "english":
       case "international":
       default: return "en-US";
+    }
+  }
+
+  void _onSocketMessage(dynamic data) {
+    print('Received from server: $data');
+
+    if (data is! Map) return;
+    final type = _coerceTrimmedString(data['type']);
+    final messageText = _coerceTrimmedString(data['message']);
+
+    if (messageText == null) return;
+    if (!mounted) return;
+
+    if (type == 'user' &&
+        messageText.toLowerCase().contains('botname=') &&
+        messageText.toLowerCase().contains('gender=')) {
+      print("↳ Skipping UI for initialization message");
+      return;
+    }
+
+    final suggestionText = _coerceTrimmedString(data['suggestion']);
+
+    setState(() {
+      if (type == 'user') {
+        _messages.add(ChatMessage(
+          text: messageText,
+          isUser: true,
+          id: _newChatMessageId(),
+        ));
+      } else if (type == 'ai') {
+        _messages.add(ChatMessage(
+          text: messageText,
+          isUser: false,
+          hasAudio: true,
+          suggestion: suggestionText,
+          id: _newChatMessageId(),
+        ));
+        _lastAiMessage = messageText;
+
+        if (!_isFirstAiMessageReceived) {
+          _isFirstAiMessageReceived = true;
+          Future.microtask(() {
+            if (mounted) _speak(messageText);
+          });
+        } else {
+          _speak(messageText);
+        }
+      }
+    });
+
+    _scrollToBottom();
+  }
+
+  void _onAiFeedbackSocket(dynamic raw) {
+    print('aifeedback event: $raw');
+    if (!mounted) return;
+    if (raw is! Map) return;
+    final data = Map<String, dynamic>.from(raw);
+    final t = _coerceTrimmedString(data['type'])?.toLowerCase();
+
+    if (t == 'typing') {
+      final mid = _pendingAiFeedbackMessageId;
+      if (mid != null) {
+        setState(() => _aiFeedbackLoadingIds.add(mid));
+      }
+      return;
+    }
+
+    if (t == 'user') {
+      // Server echo of analyzed text; optional chat mirror — skipped to avoid duplicates.
+      return;
+    }
+
+    if (t == 'error') {
+      final msg =
+          _coerceTrimmedString(data['message']) ?? 'Feedback request failed';
+      final mid = _pendingAiFeedbackMessageId;
+      setState(() {
+        if (mid != null) {
+          _aiFeedbackLoadingIds.remove(mid);
+          _aiFeedbackErrorByMessageId[mid] = msg;
+          _aiFeedbackResultByMessageId.remove(mid);
+        }
+        _pendingAiFeedbackMessageId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      return;
+    }
+
+    if (t == 'ai') {
+      final mid = _pendingAiFeedbackMessageId;
+      try {
+        final payload = AiFeedbackAiPayload.fromJson(data);
+        setState(() {
+          if (mid != null) {
+            _aiFeedbackLoadingIds.remove(mid);
+            _aiFeedbackErrorByMessageId.remove(mid);
+            _aiFeedbackResultByMessageId[mid] = payload;
+          }
+          _pendingAiFeedbackMessageId = null;
+        });
+      } catch (e) {
+        setState(() {
+          if (mid != null) {
+            _aiFeedbackLoadingIds.remove(mid);
+            _aiFeedbackErrorByMessageId[mid] = 'Invalid feedback data';
+            _aiFeedbackResultByMessageId.remove(mid);
+          }
+          _pendingAiFeedbackMessageId = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not parse AI feedback')),
+        );
+      }
+      return;
+    }
+  }
+
+  void _onTypingSocket(dynamic raw) {
+    if (!mounted) return;
+    if (raw is! Map) return;
+    final data = Map<String, dynamic>.from(raw);
+    final scope = _coerceTrimmedString(data['type'])?.toLowerCase();
+    if (scope != 'aifeedback') return;
+    final mid = _pendingAiFeedbackMessageId;
+    if (mid != null) {
+      setState(() => _aiFeedbackLoadingIds.add(mid));
     }
   }
 
@@ -127,58 +261,9 @@ class _ChatScreenState extends State<ChatScreen> {
       socketService.socket.onConnect(onFirstConnect);
     });
 
-    // Listen for incoming messages
-    socketService.socket.on('message', (data) {
-      print('Received from server: $data');
-
-      if (data is! Map) return;
-      final type = _coerceTrimmedString(data['type']);
-      final messageText = _coerceTrimmedString(data['message']);
-
-      if (messageText == null) return;
-      if (!mounted) return;
-
-      // Skip our own initialization echo
-      if (type == 'user' &&
-          messageText.toLowerCase().contains('botname=') &&
-          messageText.toLowerCase().contains('gender=')) {
-        print("↳ Skipping UI for initialization message");
-        return;
-      }
-
-      final exampleText = _coerceTrimmedString(data['example']);
-
-      setState(() {
-        if (type == 'user') {
-          _messages.add(ChatMessage(
-            text: messageText,
-            isUser: true,
-            id: _newChatMessageId(),
-          ));
-        } else if (type == 'ai') {
-          // Removed skipping of generic welcome → now shows first message
-          _messages.add(ChatMessage(
-            text: messageText,
-            isUser: false,
-            hasAudio: true,
-            example: exampleText,
-            id: _newChatMessageId(),
-          ));
-          _lastAiMessage = messageText;
-
-          if (!_isFirstAiMessageReceived) {
-            _isFirstAiMessageReceived = true;
-            Future.microtask(() {
-              if (mounted) _speak(messageText);
-            });
-          } else {
-            _speak(messageText);
-          }
-        }
-      });
-
-      _scrollToBottom();
-    });
+    socketService.socket.on('message', _onSocketMessage);
+    socketService.socket.on('aifeedback', _onAiFeedbackSocket);
+    socketService.socket.on('typing', _onTypingSocket);
   }
 
   void _onInputTextChanged() {
@@ -431,21 +516,23 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  /// Single quick reply from latest AI `example` (backend controls length); local default if none.
+  /// Single quick reply from latest AI `suggestion` (socket payload); local default if none.
   List<String> _generateSuggestions() {
-    String? latestExample;
+    String? latestSuggestion;
     for (final msg in _messages.reversed) {
-      if (!msg.isUser && msg.example != null && msg.example!.trim().isNotEmpty) {
-        latestExample = msg.example!.trim();
+      if (!msg.isUser &&
+          msg.suggestion != null &&
+          msg.suggestion!.trim().isNotEmpty) {
+        latestSuggestion = msg.suggestion!.trim();
         break;
       }
     }
 
-    if (latestExample == null || latestExample.isEmpty) {
+    if (latestSuggestion == null || latestSuggestion.isEmpty) {
       return ["Hi, let's start learning!"];
     }
 
-    return [latestExample];
+    return [latestSuggestion];
   }
 
   void _toggleSuggestions() {
@@ -712,7 +799,9 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _restartTimer?.cancel();
     _countdownTimer?.cancel();
-    socketService.socket.off('message');
+    socketService.socket.off('message', _onSocketMessage);
+    socketService.socket.off('aifeedback', _onAiFeedbackSocket);
+    socketService.socket.off('typing', _onTypingSocket);
     _flutterTts.stop();
     _speech.stop();
     _textController.removeListener(_onInputTextChanged);
@@ -1087,12 +1176,27 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _toggleAiFeedbackForMessage(String messageId) {
+  void _toggleAiFeedbackForMessage(ChatMessage message) {
+    if (!message.isUser) return;
     setState(() {
-      if (_expandedAiFeedbackIds.contains(messageId)) {
-        _expandedAiFeedbackIds.remove(messageId);
+      if (_expandedAiFeedbackIds.contains(message.id)) {
+        _expandedAiFeedbackIds.remove(message.id);
+        _aiFeedbackLoadingIds.remove(message.id);
+        if (_pendingAiFeedbackMessageId == message.id) {
+          _pendingAiFeedbackMessageId = null;
+        }
       } else {
-        _expandedAiFeedbackIds.add(messageId);
+        _expandedAiFeedbackIds.add(message.id);
+        _aiFeedbackResultByMessageId.remove(message.id);
+        _aiFeedbackErrorByMessageId.remove(message.id);
+        if (socketService.isConnected) {
+          _aiFeedbackLoadingIds.add(message.id);
+          _pendingAiFeedbackMessageId = message.id;
+          socketService.emitAiFeedback(message.text);
+        } else {
+          _aiFeedbackErrorByMessageId[message.id] =
+              'Not connected. Check your network and try again.';
+        }
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -1241,7 +1345,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: () => _toggleAiFeedbackForMessage(message.id),
+                      onTap: () => _toggleAiFeedbackForMessage(message),
                       borderRadius: BorderRadius.circular(14),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -1275,6 +1379,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 10),
               child: _buildAiFeedbackCardsStack(
+                messageId: message.id,
                 partnerPhoto: partnerPhoto,
               ),
             ),
@@ -1283,25 +1388,153 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // --- AI feedback expansion (dark cards, mock content matching product mockup) ---
+  // --- AI feedback (Socket `aifeedback` + `typing` with type aifeedback) ---
   static const Color _fbCardBg = Color(0xFF2C2C2E);
   static const Color _fbRowBg = Color(0xFF3A3A3C);
   static const Color _fbPurple = Color(0xFF7B61FF);
   static const Color _fbGrammarGreen = Color(0xFF1B5E20);
   static const Color _fbGrammarGreenText = Color(0xFF69F0AE);
 
-  Widget _buildAiFeedbackCardsStack({required String? partnerPhoto}) {
+  Color _pronunciationScoreColor(double score) {
+    if (score < 40) return const Color(0xFFEF5350);
+    if (score < 70) return const Color(0xFFFFA726);
+    return const Color(0xFF69F0AE);
+  }
+
+  List<TextSpan> _grammarOriginalSpans(
+    String original,
+    List<String> errors,
+    TextStyle baseStyle,
+    TextStyle errorStyle,
+  ) {
+    final spans = <TextSpan>[];
+    if (original.isEmpty) return spans;
+    final sorted = List<String>.from(errors)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    var rest = original;
+    while (rest.isNotEmpty) {
+      int? bestIdx;
+      String? bestErr;
+      for (final e in sorted) {
+        if (e.isEmpty) continue;
+        final i = rest.indexOf(e);
+        if (i >= 0 && (bestIdx == null || i < bestIdx)) {
+          bestIdx = i;
+          bestErr = e;
+        }
+      }
+      if (bestIdx == null || bestErr == null) {
+        spans.add(TextSpan(text: rest, style: baseStyle));
+        break;
+      }
+      if (bestIdx > 0) {
+        spans.add(TextSpan(text: rest.substring(0, bestIdx), style: baseStyle));
+      }
+      spans.add(TextSpan(text: bestErr, style: errorStyle));
+      rest = rest.substring(bestIdx + bestErr.length);
+    }
+    return spans;
+  }
+
+  Widget _buildAiFeedbackCardsStack({
+    required String messageId,
+    required String? partnerPhoto,
+  }) {
     final maxW = MediaQuery.of(context).size.width * 0.75;
+    final err = _aiFeedbackErrorByMessageId[messageId];
+    if (err != null && err.isNotEmpty) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxW),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _fbCardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
+          ),
+          child: Text(
+            err,
+            style: GoogleFonts.roboto(
+              fontSize: 14,
+              color: Colors.white,
+              height: 1.4,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_aiFeedbackLoadingIds.contains(messageId)) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxW),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+          decoration: BoxDecoration(
+            color: _fbCardBg,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(_fbPurple),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Analyzing your English…',
+                style: GoogleFonts.roboto(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final payload = _aiFeedbackResultByMessageId[messageId];
+    if (payload == null) {
+      return const SizedBox.shrink();
+    }
+
+    final showGrammar = payload.grammar.original.isNotEmpty ||
+        payload.grammar.corrected.isNotEmpty;
+    final showPron = payload.pronunciation.word.isNotEmpty ||
+        payload.pronunciation.status.isNotEmpty ||
+        payload.pronunciation.phonetic.isNotEmpty;
+    final showVocab = payload.vocabulary.suggestions.isNotEmpty;
+
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxW),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildGrammarFeedbackCard(),
-          const SizedBox(height: 12),
-          _buildPronunciationFeedbackCard(partnerPhoto),
-          const SizedBox(height: 12),
-          _buildVocabularyFeedbackCard(),
+          if (showGrammar) ...[
+            _buildGrammarFeedbackCardFromData(payload.grammar),
+            const SizedBox(height: 12),
+          ],
+          if (showPron) ...[
+            _buildPronunciationFeedbackCardFromData(
+              payload.pronunciation,
+              partnerPhoto,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (showVocab) _buildVocabularyFeedbackCardFromData(payload.vocabulary),
+          if (!showGrammar && !showPron && !showVocab)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _fbCardBg,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                'No structured feedback in this response.',
+                style: GoogleFonts.roboto(fontSize: 14, color: Colors.white54),
+              ),
+            ),
         ],
       ),
     );
@@ -1325,7 +1558,18 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildGrammarFeedbackCard() {
+  Widget _buildGrammarFeedbackCardFromData(AiFeedbackGrammar g) {
+    final base = GoogleFonts.roboto(
+      fontSize: 14,
+      height: 1.45,
+      color: Colors.white,
+    );
+    const errStyle = TextStyle(
+      color: Color(0xFFEF5350),
+      fontWeight: FontWeight.w600,
+      fontSize: 14,
+      height: 1.45,
+    );
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
@@ -1378,136 +1622,43 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _fbRowBg,
-                          borderRadius: BorderRadius.circular(12),
+                      if (g.original.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _fbRowBg,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text.rich(
+                            TextSpan(
+                              children: _grammarOriginalSpans(
+                                g.original,
+                                g.errors,
+                                base,
+                                errStyle,
+                              ),
+                            ),
+                          ),
                         ),
-                        child: Text.rich(
-                          TextSpan(
+                      if (g.original.isNotEmpty && g.corrected.isNotEmpty)
+                        const SizedBox(height: 10),
+                      if (g.corrected.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _fbGrammarGreen,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            g.corrected,
                             style: GoogleFonts.roboto(
                               fontSize: 14,
                               height: 1.45,
-                              color: Colors.white,
+                              color: _fbGrammarGreenText,
+                              fontWeight: FontWeight.w500,
                             ),
-                            children: const [
-                              TextSpan(text: 'I enjoy '),
-                              TextSpan(
-                                text: 'watch',
-                                style: TextStyle(
-                                  color: Color(0xFFEF5350),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: ' many '),
-                              TextSpan(
-                                text: 'movie',
-                                style: TextStyle(
-                                  color: Color(0xFFEF5350),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(
-                                  text: ' of different language and '),
-                              TextSpan(
-                                text: 'it culture',
-                                style: TextStyle(
-                                  color: Color(0xFFEF5350),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: '. It '),
-                              TextSpan(
-                                text: 'make',
-                                style: TextStyle(
-                                  color: Color(0xFFEF5350),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: ' me '),
-                              TextSpan(
-                                text: 'know world',
-                                style: TextStyle(
-                                  color: Color(0xFFEF5350),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: ' more '),
-                              TextSpan(
-                                text: 'better',
-                                style: TextStyle(
-                                  color: Color(0xFFEF5350),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: '!'),
-                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _fbGrammarGreen,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text.rich(
-                          TextSpan(
-                            style: GoogleFonts.roboto(
-                              fontSize: 14,
-                              height: 1.45,
-                              color: Colors.white,
-                            ),
-                            children: const [
-                              TextSpan(text: 'I enjoy '),
-                              TextSpan(
-                                text: 'watching',
-                                style: TextStyle(
-                                  color: _fbGrammarGreenText,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: ' many '),
-                              TextSpan(
-                                text: 'movies in',
-                                style: TextStyle(
-                                  color: _fbGrammarGreenText,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(
-                                  text:
-                                      ' different languages and '),
-                              TextSpan(
-                                text: 'learning about their cultures',
-                                style: TextStyle(
-                                  color: _fbGrammarGreenText,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: '. It '),
-                              TextSpan(
-                                text: 'helps me understand',
-                                style: TextStyle(
-                                  color: _fbGrammarGreenText,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: ' the world '),
-                              TextSpan(
-                                text: 'better',
-                                style: TextStyle(
-                                  color: _fbGrammarGreenText,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              TextSpan(text: '!'),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -1519,7 +1670,12 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildPronunciationFeedbackCard(String? partnerPhoto) {
+  Widget _buildPronunciationFeedbackCardFromData(
+    AiFeedbackPronunciation p,
+    String? partnerPhoto,
+  ) {
+    final scoreColor = _pronunciationScoreColor(p.score);
+    final pct = '${p.score.round()}%';
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
@@ -1538,41 +1694,46 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'understand',
-                      style: GoogleFonts.roboto(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                    if (p.word.isNotEmpty)
+                      Text(
+                        p.word,
+                        style: GoogleFonts.roboto(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'uhn-duh-stand',
-                      style: GoogleFonts.roboto(
-                        fontSize: 14,
-                        color: Colors.white70,
+                    if (p.phonetic.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        p.phonetic,
+                        style: GoogleFonts.roboto(
+                          fontSize: 14,
+                          color: Colors.white70,
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 12),
                     Text(
-                      '20%',
+                      pct,
                       style: GoogleFonts.roboto(
                         fontSize: 36,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFFEF5350),
+                        color: scoreColor,
                         height: 1,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Needs practice',
-                      style: GoogleFonts.roboto(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFEF5350),
+                    if (p.status.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        p.status,
+                        style: GoogleFonts.roboto(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: scoreColor,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -1623,7 +1784,11 @@ class _ChatScreenState extends State<ChatScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
               child: InkWell(
-                onTap: () {},
+                onTap: () {
+                  if (p.word.trim().isNotEmpty) {
+                    _speakInEnglish(p.word.trim());
+                  }
+                },
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
                   padding:
@@ -1645,50 +1810,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildVocabularyFeedbackCard() {
-    Widget row(String from, String to, {bool isLast = false}) {
-      return Container(
-        margin: EdgeInsets.only(bottom: isLast ? 0 : 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: _fbRowBg,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: Text(
-                from,
-                style: GoogleFonts.roboto(
-                  fontSize: 13,
-                  color: Colors.white,
-                  height: 1.3,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Icon(Icons.arrow_forward, color: Colors.white54, size: 18),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                to,
-                style: GoogleFonts.roboto(
-                  fontSize: 13,
-                  color: _fbGrammarGreenText,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                ),
-              ),
-            ),
-            Icon(Icons.bookmark_border, color: Colors.white70, size: 20),
-          ],
-        ),
-      );
-    }
-
+  Widget _buildVocabularyFeedbackCardFromData(AiFeedbackVocabulary vocab) {
+    final rows = vocab.suggestions;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
@@ -1700,8 +1823,53 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           _buildFeedbackCategoryChip('Vocabulary'),
           const SizedBox(height: 14),
-          row('Watching a lot of movies', 'Exploring movies'),
-          row('Multiple languages', 'Diverse languages', isLast: true),
+          ...rows.asMap().entries.map((e) {
+            final i = e.key;
+            final r = e.value;
+            final isLast = i == rows.length - 1;
+            return Container(
+              margin: EdgeInsets.only(bottom: isLast ? 0 : 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: _fbRowBg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      r.original,
+                      style: GoogleFonts.roboto(
+                        fontSize: 13,
+                        color: Colors.white,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Icon(Icons.arrow_forward,
+                        color: Colors.white54, size: 18),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      r.improvement,
+                      style: GoogleFonts.roboto(
+                        fontSize: 13,
+                        color: _fbGrammarGreenText,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.bookmark_border,
+                      color: Colors.white70, size: 20),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -1774,13 +1942,14 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final bool hasAudio;
-  final String? example;
+  /// Quick-reply chip text from socket `suggestion` (not `example`).
+  final String? suggestion;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     this.hasAudio = false,
-    this.example,
+    this.suggestion,
     String? id,
   }) : id = id ??
             '${DateTime.now().microsecondsSinceEpoch}_${text.hashCode}';

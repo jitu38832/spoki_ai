@@ -22,6 +22,7 @@ class SocketService {
 
     socket = IO.io(
       'ws://3.109.110.211',
+      // 'ws://192.168.1.6:9799',
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableAutoConnect()
@@ -81,6 +82,23 @@ class SocketService {
     final payload = {"message": text.trim()};
     socket.emit('sendMessage', payload);
     print('📤 Sent: $payload');
+  }
+
+  /// Request AI feedback for a learner sentence. Server listens on `aifeedback`.
+  void emitAiFeedback(String learnerText) {
+    if (!isConnected) {
+      print('⚠️ Not connected - cannot send aifeedback');
+      return;
+    }
+    final t = learnerText.trim();
+    if (t.isEmpty) return;
+    final payload = <String, dynamic>{
+      'text': t,
+      'message': t,
+      'content': t,
+    };
+    socket.emit('aifeedback', payload);
+    print('📤 aifeedback: ${t.length} chars');
   }
 
   void resetInitialFlag() {
