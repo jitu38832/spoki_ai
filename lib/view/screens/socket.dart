@@ -84,8 +84,31 @@ class SocketService {
     print('📤 Sent: $payload');
   }
 
-  /// Request AI feedback for a learner sentence. Server listens on `aifeedback`.
-  void emitAiFeedback(String learnerText) {
+  /// Text + uploaded voice URL (after multipart upload). Server should broadcast with same fields.
+  void sendVoiceMessage({
+    required String message,
+    required String audioUrl,
+    String? clientMessageId,
+  }) {
+    if (!isConnected) {
+      print('⚠️ Not connected - cannot send voice message');
+      return;
+    }
+    final payload = <String, dynamic>{
+      'message': message.trim(),
+      'audioUrl': audioUrl.trim(),
+    };
+    final id = clientMessageId?.trim();
+    if (id != null && id.isNotEmpty) {
+      payload['clientMessageId'] = id;
+    }
+    socket.emit('sendMessage', payload);
+    print('📤 Sent voice message (${message.trim().length} chars, url len=${audioUrl.trim().length})');
+  }
+
+  /// Request AI feedback. Include [audioUrl] only for voice messages; server should run
+  /// pronunciation analysis only when [audioUrl] is present.
+  void emitAiFeedback(String learnerText, {String? audioUrl}) {
     if (!isConnected) {
       print('⚠️ Not connected - cannot send aifeedback');
       return;
@@ -97,8 +120,38 @@ class SocketService {
       'message': t,
       'content': t,
     };
+    final au = audioUrl?.trim();
+    final hasAudio = au != null && au.isNotEmpty;
+    payload['hasAudio'] = hasAudio;
+    payload['pronunciationRequested'] = hasAudio;
+    payload['pronunciationMode'] = hasAudio ? 'audio' : 'disabled_without_audio';
+    if (hasAudio) {
+      payload['audioUrl'] = au;
+    }
     socket.emit('aifeedback', payload);
-    print('📤 aifeedback: ${t.length} chars');
+    print('📤 aifeedback: ${t.length} chars, hasAudio=$hasAudio');
+  }
+
+  /// Poll / refresh story quiz generation status (event `storyQuizStatus`).
+  void emitGetStoryQuizStatus({
+    required String storyId,
+    required String token,
+    String? requestId,
+  }) {
+    if (!isConnected) {
+      print('⚠️ Not connected - cannot getStoryQuizStatus');
+      return;
+    }
+    if (storyId.isEmpty || token.isEmpty) return;
+    final payload = <String, dynamic>{
+      'storyId': storyId,
+      'token': token,
+    };
+    if (requestId != null && requestId.isNotEmpty) {
+      payload['requestId'] = requestId;
+    }
+    socket.emit('getStoryQuizStatus', payload);
+    print('📤 getStoryQuizStatus: storyId=$storyId');
   }
 
   void resetInitialFlag() {

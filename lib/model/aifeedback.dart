@@ -17,6 +17,12 @@ String _str(dynamic v, [String fallback = '']) {
   return v.toString();
 }
 
+double? _num(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString());
+}
+
 List<String> _stringList(dynamic v) {
   if (v == null) return [];
   if (v is List) {
@@ -55,12 +61,28 @@ class AiFeedbackPronunciation {
   final String phonetic;
   final double score;
   final String status;
+  final String? practiceAudioUrl;
+  final String? audioUrl;
+  final String? practiceUrl;
+  final String? sourceAudioUrl;
+  final String? practiceWord;
+  final String? practiceHeardAs;
+  final double? segmentStartRatio;
+  final double? segmentEndRatio;
 
   const AiFeedbackPronunciation({
     required this.word,
     required this.phonetic,
     required this.score,
     required this.status,
+    this.practiceAudioUrl,
+    this.audioUrl,
+    this.practiceUrl,
+    this.sourceAudioUrl,
+    this.practiceWord,
+    this.practiceHeardAs,
+    this.segmentStartRatio,
+    this.segmentEndRatio,
   });
 
   factory AiFeedbackPronunciation.fromJson(Map<String, dynamic>? json) {
@@ -79,13 +101,63 @@ class AiFeedbackPronunciation {
     } else if (s != null) {
       scoreVal = double.tryParse(s.toString()) ?? 0;
     }
+
+    Map<String, dynamic>? hint;
+    final h = json['practiceSegmentHint'];
+    if (h is Map<String, dynamic>) {
+      hint = h;
+    } else if (h is Map) {
+      hint = Map<String, dynamic>.from(h);
+    }
+
+    String? pickStr(dynamic v) {
+      final t = _str(v).trim();
+      return t.isEmpty ? null : t;
+    }
+
+    double? ratio(dynamic v) {
+      final n = _num(v);
+      if (n == null) return null;
+      return n.clamp(0.0, 1.0);
+    }
+
     return AiFeedbackPronunciation(
       word: _str(json['word']).trim(),
       phonetic: _str(json['phonetic']).trim(),
       score: scoreVal.clamp(0, 100),
       status: _str(json['status']).trim(),
+      practiceAudioUrl: pickStr(json['practiceAudioUrl']),
+      audioUrl: pickStr(json['audioUrl']),
+      practiceUrl: pickStr(json['practiceUrl']),
+      sourceAudioUrl: pickStr(json['sourceAudioUrl']),
+      practiceWord: pickStr(json['practiceWord']),
+      practiceHeardAs: pickStr(json['practiceHeardAs']),
+      segmentStartRatio:
+          ratio(
+            json['practiceSegmentStartRatio'] ??
+                hint?['startRatio'] ??
+                json['startRatio'],
+          ),
+      segmentEndRatio:
+          ratio(
+            json['practiceSegmentEndRatio'] ??
+                hint?['endRatio'] ??
+                json['endRatio'],
+          ),
     );
   }
+
+  String? get playbackUrl {
+    for (final v in [practiceAudioUrl, audioUrl, practiceUrl, sourceAudioUrl]) {
+      if (v != null && v.trim().isNotEmpty) return v.trim();
+    }
+    return null;
+  }
+
+  bool get hasSegmentHint =>
+      segmentStartRatio != null &&
+      segmentEndRatio != null &&
+      segmentEndRatio! > segmentStartRatio!;
 
   bool get isEmpty => word.isEmpty && phonetic.isEmpty && status.isEmpty;
 }
@@ -139,11 +211,15 @@ class AiFeedbackAiPayload {
   final AiFeedbackVocabulary vocabulary;
   final String? timestamp;
 
+  /// Full corrected sentence as one string (backend should place last in response / UI).
+  final String? fullCorrectedSentence;
+
   const AiFeedbackAiPayload({
     required this.grammar,
     required this.pronunciation,
     required this.vocabulary,
     this.timestamp,
+    this.fullCorrectedSentence,
   });
 
   factory AiFeedbackAiPayload.fromJson(Map<String, dynamic> json) {
@@ -153,12 +229,17 @@ class AiFeedbackAiPayload {
       return null;
     }
 
+    final f1 = _str(json['fullCorrectedSentence']).trim();
+    final f2 = _str(json['fullSentence']).trim();
+    final full = f1.isNotEmpty ? f1 : (f2.isNotEmpty ? f2 : null);
+
     return AiFeedbackAiPayload(
       grammar: AiFeedbackGrammar.fromJson(asMap(json['grammar'])),
       pronunciation:
           AiFeedbackPronunciation.fromJson(asMap(json['pronunciation'])),
       vocabulary: AiFeedbackVocabulary.fromJson(asMap(json['vocabulary'])),
       timestamp: json['timestamp']?.toString(),
+      fullCorrectedSentence: full,
     );
   }
 }

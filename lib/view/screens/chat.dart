@@ -2,15 +2,19 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:socket_io_client/socket_io_client.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+import 'package:socket_io_client/socket_io_client.dart';
 import 'package:spokiai/model/aifeedback.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/socket.dart'; // Adjust path if needed
 import 'package:spokiai/view/screens/voice_settings.dart';
+import 'package:spokiai/view/services/chat_voice_upload_service.dart';
+import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:translator/translator.dart';
 import '../utils/colors.dart'; // Make sure appColor is defined
 
@@ -31,30 +35,51 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
-  final stt.SpeechToText _speech = stt.SpeechToText();
+class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
+  final AudioRecorder _voiceRecorder = AudioRecorder();
+  final AudioPlayer _chatVoicePlayer = AudioPlayer();
   late FlutterTts _flutterTts;
 
-  bool _isListening = false;
-  bool _speechInitialized = false;
+  bool _isRecordingVoice = false;
+  bool _isVoiceUploading = false;
+  String? _voiceRecordingPath;
+  String? _playingVoiceMessageId;
+  Duration _voicePlayPosition = Duration.zero;
+  Duration _voicePlayDuration = Duration.zero;
+  DateTime? _voicePlayStartedAt;
+  Timer? _pronStopTimer;
+  String? _activePronUrl;
+  bool _isPronPlaying = false;
+  bool _isPronLoading = false;
+  double? _pendingPronStartRatio;
+  double? _pendingPronEndRatio;
+
   bool _isFirstAiMessageReceived = false;
   bool _isSpeaking = false;
   final TextEditingController _textController = TextEditingController();
 
-  String _accumulatedTranscription = '';
-  final GoogleTranslator _translator = GoogleTranslator();
-  String? _currentlySpeakingText;
+  /// Message row showing the in-chat TTS capsule as "playing".
+  String? _speakingMessageId;
+  Timer? _ttsElapsedTimer;
+  Duration _ttsElapsed = Duration.zero;
+  int _ttsEstimatedSeconds = 4;
 
+  /// Filled 0–1 per message: colored portion of TTS waveform (persists if stopped mid-way).
+  final Map<String, double> _ttsWaveProgressByMessageId = {};
+
+  /// When false, TTS ended via user stop — do not set waveform progress to 100% on completion.
+  bool _ttsCountAsNaturalCompletion = true;
+
+  late AnimationController _waveController;
+
+  final GoogleTranslator _translator = GoogleTranslator();
   List<ChatMessage> _messages = [];
 
   late SocketService socketService;
-  String _previousRecognized = '';
 
   bool _showSuggestions = false;
   bool _isBulbActive = false;
-  String? _lastAiMessage;
-
   /// User message ids with AI feedback panel expanded below the bubble.
   final Set<String> _expandedAiFeedbackIds = {};
 
@@ -63,12 +88,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<String, AiFeedbackAiPayload> _aiFeedbackResultByMessageId = {};
   final Map<String, String> _aiFeedbackErrorByMessageId = {};
   final Set<String> _aiFeedbackLoadingIds = {};
-
-  // For 25-second continuous listening
-  Timer? _countdownTimer;
-  int _remainingSeconds = 25;
-  Timer? _restartTimer;
-  bool _shouldKeepListening = true;
 
   String _getLocaleFromPartnerLanguage(String partnerLang) {
     String lower = partnerLang.toLowerCase().trim();
@@ -117,31 +136,41 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final suggestionText = _coerceTrimmedString(data['suggestion']);
+    final audioUrl = _coerceTrimmedString(data['audioUrl']);
+    final clientId = _coerceTrimmedString(data['clientMessageId']);
+
+    if (type == 'user' &&
+        clientId != null &&
+        _messages.any((m) => m.id == clientId)) {
+      _scrollToBottom();
+      return;
+    }
 
     setState(() {
       if (type == 'user') {
+        final id = clientId ?? _newChatMessageId();
         _messages.add(ChatMessage(
           text: messageText,
           isUser: true,
-          id: _newChatMessageId(),
+          id: id,
+          audioUrl: audioUrl,
         ));
       } else if (type == 'ai') {
+        final msgId = _newChatMessageId();
         _messages.add(ChatMessage(
           text: messageText,
           isUser: false,
           hasAudio: true,
           suggestion: suggestionText,
-          id: _newChatMessageId(),
+          id: msgId,
         ));
-        _lastAiMessage = messageText;
-
         if (!_isFirstAiMessageReceived) {
           _isFirstAiMessageReceived = true;
           Future.microtask(() {
-            if (mounted) _speak(messageText);
+            if (mounted) _speak(messageText, messageId: msgId);
           });
         } else {
-          _speak(messageText);
+          _speak(messageText, messageId: msgId);
         }
       }
     });
@@ -236,8 +265,34 @@ class _ChatScreenState extends State<ChatScreen> {
     socketService.initSocket();
 
     _flutterTts = FlutterTts();
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
     _initializeTts();
-    _initializeSpeech();
+    _chatVoicePlayer.onDurationChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _voicePlayDuration = d);
+      unawaited(_tryApplyPronSegmentIfPending());
+    });
+    _chatVoicePlayer.onPositionChanged.listen((p) {
+      if (!mounted) return;
+      setState(() => _voicePlayPosition = p);
+    });
+    _chatVoicePlayer.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      _waveController.stop();
+      _pronStopTimer?.cancel();
+      setState(() {
+        _playingVoiceMessageId = null;
+        _voicePlayPosition = Duration.zero;
+        _voicePlayDuration = Duration.zero;
+        _voicePlayStartedAt = null;
+        _activePronUrl = null;
+        _isPronPlaying = false;
+        _isPronLoading = false;
+      });
+    });
     _textController.addListener(_onInputTextChanged);
 
     // New chat session (incl. new partner after leaving chat): always handshake again.
@@ -373,147 +428,364 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     _flutterTts.setCompletionHandler(() {
-      if (mounted) {
-        setState(() {
-          _isSpeaking = false;
-          _currentlySpeakingText = null;
-        });
+      if (!mounted) return;
+      final id = _speakingMessageId;
+      _stopTtsElapsedTicker();
+      _waveController.stop();
+      if (_ttsCountAsNaturalCompletion && id != null) {
+        _ttsWaveProgressByMessageId[id] = 1.0;
       }
+      _ttsCountAsNaturalCompletion = true;
+      setState(() {
+        _isSpeaking = false;
+        _speakingMessageId = null;
+      });
     });
 
     _flutterTts.setErrorHandler((msg) {
       print("TTS Error: $msg");
-      if (mounted) {
-        setState(() {
-          _isSpeaking = false;
-          _currentlySpeakingText = null;
-        });
+      if (!mounted) return;
+      final id = _speakingMessageId;
+      _stopTtsElapsedTicker();
+      _waveController.stop();
+      if (id != null && _ttsEstimatedSeconds > 0) {
+        final p = (_ttsElapsed.inMilliseconds / (_ttsEstimatedSeconds * 1000))
+            .clamp(0.0, 1.0);
+        if (p > 0) _ttsWaveProgressByMessageId[id] = p;
       }
-    });
-  }
-
-  Future<void> _initializeSpeech() async {
-    final available = await _speech.initialize(
-      debugLogging: true,
-      onStatus: (status) {
-        print('Speech status: $status');
-        if (_isListening && (status == 'notListening' || status == 'done')) {
-          _tryRestartListening();
-        }
-      },
-      onError: (error) {
-        print('Speech error: ${error.errorMsg}');
-        if (_isListening && !error.permanent) {
-          _tryRestartListening();
-        }
-      },
-    );
-    if (mounted) setState(() => _speechInitialized = available);
-  }
-
-  void _tryRestartListening() {
-    if (!_shouldKeepListening || !_isListening) return;
-
-    _restartTimer?.cancel();
-    _restartTimer = Timer(const Duration(milliseconds: 400), () {
-      if (mounted && _isListening) {
-        print("→ Auto-restarting speech recognition after pause");
-        _startContinuousListen();
-      }
-    });
-  }
-
-  void _startContinuousListen() {
-    _speech.listen(
-      onResult: (result) {
-        if (!mounted) return;
-
-        final current = result.recognizedWords.trim();
-
-        // Only append if there's actually new content
-        if (current.isNotEmpty && current.length > _previousRecognized.length) {
-          final newPart = current.substring(_previousRecognized.length).trim();
-
-          if (newPart.isNotEmpty) {
-            setState(() {
-              if (_accumulatedTranscription.isNotEmpty &&
-                  !_accumulatedTranscription.endsWith(' ')) {
-                _accumulatedTranscription += ' ';
-              }
-              _accumulatedTranscription += newPart;
-            });
-          }
-        }
-
-        // Update previous for next partial result
-        _previousRecognized = current;
-
-        // If final result → reset for next segment
-        if (result.finalResult) {
-          _previousRecognized = '';
-        }
-      },
-      listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 5),
-      partialResults: true,
-      localeId: "en_US",
-      cancelOnError: false,
-    );
-  }
-
-  void _toggleListening() {
-    if (_isListening) {
-      _stopListeningAndSend();
-    } else {
-      _startListening();
-    }
-  }
-
-  void _startListening() {
-    if (!_speechInitialized) return;
-
-    setState(() {
-      _isListening = true;
-      _accumulatedTranscription = '';
-      _previousRecognized = '';   // ← important: reset
-      _remainingSeconds = 25;
-    });
-    _shouldKeepListening = true;
-    _startContinuousListen();
-
-    _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+      _ttsCountAsNaturalCompletion = true;
       setState(() {
-        _remainingSeconds--;
-        if (_remainingSeconds <= 0) {
-          timer.cancel();
-          _stopListeningAndSend();
-        }
+        _isSpeaking = false;
+        _speakingMessageId = null;
       });
     });
   }
 
-  void _stopListeningAndSend() {
-    _shouldKeepListening = false;
-    _restartTimer?.cancel();
-    _countdownTimer?.cancel();
-    _speech.stop();
+  int _estimateTtsSeconds(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return 4;
+    final words =
+        t.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).length;
+    return (words / 2.6).ceil().clamp(3, 120);
+  }
 
-    final finalText = _accumulatedTranscription.trim();
-    if (finalText.isNotEmpty) {
-      socketService.sendMessage(finalText);
-      print("Sent accumulated message: $finalText");
+  String _formatMmSs(int totalSeconds) {
+    final s = totalSeconds.clamp(0, 3599);
+    final m = s ~/ 60;
+    final sec = s % 60;
+    return '$m:${sec.toString().padLeft(2, '0')}';
+  }
+
+  void _startTtsElapsedTicker() {
+    _ttsElapsedTimer?.cancel();
+    _ttsElapsed = Duration.zero;
+    _ttsElapsedTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted || !_isSpeaking) return;
+      setState(() {
+        _ttsElapsed += const Duration(milliseconds: 250);
+      });
+    });
+  }
+
+  void _stopTtsElapsedTicker() {
+    _ttsElapsedTimer?.cancel();
+    _ttsElapsedTimer = null;
+  }
+
+  void _syncWaveAnimation() {
+    if (_isSpeaking) {
+      if (!_waveController.isAnimating) _waveController.repeat();
+    } else {
+      _waveController.stop();
+    }
+  }
+
+  double _voiceProgressForMessage(ChatMessage message) {
+    if (_playingVoiceMessageId != message.id) return 0.0;
+    var playedMs = _voicePlayPosition.inMilliseconds;
+    if (playedMs <= 0 && _voicePlayStartedAt != null) {
+      playedMs = DateTime.now().difference(_voicePlayStartedAt!).inMilliseconds;
+    }
+    final totalMs = _voicePlayDuration.inMilliseconds > 0
+        ? _voicePlayDuration.inMilliseconds
+        : _estimateTtsSeconds(message.text) * 1000;
+    if (totalMs <= 0) return 0.0;
+    return (playedMs / totalMs).clamp(0.0, 1.0);
+  }
+
+  String _voiceTimeLabelForMessage(ChatMessage message) {
+    if (_playingVoiceMessageId == message.id) {
+      var playedMs = _voicePlayPosition.inMilliseconds;
+      if (playedMs <= 0 && _voicePlayStartedAt != null) {
+        playedMs = DateTime.now().difference(_voicePlayStartedAt!).inMilliseconds;
+      }
+      final sec = (playedMs / 1000).floor();
+      return _formatMmSs(sec);
+    }
+    final sec = (_voicePlayDuration.inMilliseconds / 1000).floor();
+    if (sec > 0) return _formatMmSs(sec);
+    return '0:00';
+  }
+
+  Future<void> _stopVoicePlayback() async {
+    _pronStopTimer?.cancel();
+    _pendingPronStartRatio = null;
+    _pendingPronEndRatio = null;
+    await _chatVoicePlayer.stop();
+    _waveController.stop();
+    if (mounted) {
+      setState(() {
+        _playingVoiceMessageId = null;
+        _voicePlayPosition = Duration.zero;
+        _voicePlayDuration = Duration.zero;
+        _voicePlayStartedAt = null;
+        _activePronUrl = null;
+        _isPronPlaying = false;
+        _isPronLoading = false;
+      });
+    }
+  }
+
+  void _practiceAudioUnavailable() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not play practice segment.')),
+    );
+  }
+
+  Future<void> _tryApplyPronSegmentIfPending() async {
+    final sr = _pendingPronStartRatio;
+    final er = _pendingPronEndRatio;
+    if (sr == null || er == null) return;
+    final durationMs = _voicePlayDuration.inMilliseconds;
+    if (durationMs <= 0) return;
+    final start = sr.clamp(0.0, 1.0);
+    final end = er.clamp(0.0, 1.0);
+    if (end <= start) {
+      _pendingPronStartRatio = null;
+      _pendingPronEndRatio = null;
+      return;
+    }
+    final startMs = (durationMs * start).round();
+    final endMs = (durationMs * end).round();
+    if (endMs <= startMs) {
+      _pendingPronStartRatio = null;
+      _pendingPronEndRatio = null;
+      return;
+    }
+    await _chatVoicePlayer.seek(Duration(milliseconds: startMs));
+    _pronStopTimer?.cancel();
+    _pronStopTimer = Timer(Duration(milliseconds: endMs - startMs), () async {
+      await _chatVoicePlayer.pause();
+      if (mounted) setState(() => _isPronPlaying = false);
+    });
+    _pendingPronStartRatio = null;
+    _pendingPronEndRatio = null;
+  }
+
+  Future<void> _playPronunciationSegment(AiFeedbackPronunciation p) async {
+    final url = p.playbackUrl;
+    if (url == null || url.isEmpty) {
+      _practiceAudioUnavailable();
+      return;
     }
 
-    setState(() {
-      _isListening = false;
-      _accumulatedTranscription = '';
-      _remainingSeconds = 25;
-    });
+    if (_activePronUrl == url && _isPronPlaying) {
+      await _chatVoicePlayer.pause();
+      if (mounted) setState(() => _isPronPlaying = false);
+      return;
+    }
+
+    if (_activePronUrl == url && !_isPronPlaying) {
+      await _chatVoicePlayer.resume();
+      if (mounted) setState(() => _isPronPlaying = true);
+      return;
+    }
+
+    await _stopSpeaking();
+    await _stopVoicePlayback();
+    try {
+      if (mounted) setState(() => _isPronLoading = true);
+      _pronStopTimer?.cancel();
+      _pendingPronStartRatio = null;
+      _pendingPronEndRatio = null;
+      await _chatVoicePlayer.play(UrlSource(url));
+      if (mounted) {
+        setState(() {
+          _activePronUrl = url;
+          _isPronPlaying = true;
+          _isPronLoading = false;
+        });
+      }
+      if (p.hasSegmentHint) {
+        _pendingPronStartRatio = p.segmentStartRatio;
+        _pendingPronEndRatio = p.segmentEndRatio;
+        await _tryApplyPronSegmentIfPending();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isPronLoading = false);
+      _practiceAudioUnavailable();
+    }
+  }
+
+  Future<void> _toggleVoiceMessagePlayback(ChatMessage message) async {
+    final url = message.audioUrl?.trim();
+    if (url == null || url.isEmpty) return;
+    if (_playingVoiceMessageId == message.id) {
+      await _stopVoicePlayback();
+      return;
+    }
+    await _stopSpeaking();
+    try {
+      await _chatVoicePlayer.stop();
+      if (mounted) {
+        setState(() {
+          _playingVoiceMessageId = message.id;
+          _voicePlayPosition = Duration.zero;
+          _voicePlayDuration = Duration.zero;
+          _voicePlayStartedAt = DateTime.now();
+        });
+      }
+      if (!_waveController.isAnimating) {
+        _waveController.repeat();
+      }
+      await _chatVoicePlayer.play(UrlSource(url));
+    } catch (e) {
+      _waveController.stop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not play voice message: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleVoiceRecording() async {
+    if (_isVoiceUploading) return;
+    if (_isRecordingVoice) {
+      await _finishVoiceRecordingAndUpload();
+      return;
+    }
+    final ok = await _voiceRecorder.hasPermission();
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission is required to record.')),
+        );
+      }
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/chat_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    _voiceRecordingPath = path;
+    try {
+      await _voiceRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000),
+        path: path,
+      );
+      if (mounted) setState(() => _isRecordingVoice = true);
+    } catch (e) {
+      _voiceRecordingPath = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not start recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _finishVoiceRecordingAndUpload() async {
+    if (!_isRecordingVoice) return;
+    final savedPath = _voiceRecordingPath;
+    String? stoppedPath;
+    try {
+      stoppedPath = await _voiceRecorder.stop();
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isRecordingVoice = false;
+        _voiceRecordingPath = null;
+      });
+    }
+    final path = (stoppedPath ?? savedPath)?.trim();
+    if (path == null || path.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read recorded audio file path.')),
+        );
+      }
+      return;
+    }
+    final file = File(path);
+    if (!await file.exists() || await file.length() < 32) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Recording too short or failed.')),
+        );
+      }
+      try {
+        await file.delete();
+      } catch (_) {}
+      return;
+    }
+
+    final token = PreferenceManager.getStringValue(key: 'token') ?? '';
+    if (token.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Not logged in — cannot upload voice.')),
+        );
+      }
+      try {
+        await file.delete();
+      } catch (_) {}
+      return;
+    }
+
+    if (mounted) setState(() => _isVoiceUploading = true);
+    try {
+      final result = await ChatVoiceUploadService.upload(
+        token: token,
+        filePath: path,
+      );
+      if (!mounted) return;
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Voice upload failed. Check API / network.')),
+        );
+        return;
+      }
+      final tr = result.transcription.trim().isEmpty
+          ? '(Voice message)'
+          : result.transcription.trim();
+      final id = _newChatMessageId();
+      setState(() {
+        _messages.add(ChatMessage(
+          text: tr,
+          isUser: true,
+          id: id,
+          audioUrl: result.audioUrl,
+        ));
+      });
+      socketService.sendVoiceMessage(
+        message: tr,
+        audioUrl: result.audioUrl,
+        clientMessageId: id,
+      );
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isVoiceUploading = false);
+      try {
+        await file.delete();
+      } catch (_) {}
+    }
   }
 
   /// Single quick reply from latest AI `suggestion` (socket payload); local default if none.
@@ -625,7 +897,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     if (mounted) {
                       setState(() {
                         _isSpeaking = false;
-                        _currentlySpeakingText = null;
+                        _speakingMessageId = null;
                       });
                     }
                     Navigator.pop(context);
@@ -640,7 +912,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       if (mounted) {
                         setState(() {
                           _isSpeaking = false;
-                          _currentlySpeakingText = null;
+                          _speakingMessageId = null;
                         });
                       }
                     } else {
@@ -651,7 +923,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       if (mounted) {
                         setState(() {
                           _isSpeaking = true;
-                          _currentlySpeakingText = translatedText;
+                          _speakingMessageId = null;
                         });
                       }
 
@@ -662,7 +934,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (mounted) {
                           setState(() {
                             _isSpeaking = false;
-                            _currentlySpeakingText = null;
+                            _speakingMessageId = null;
                           });
                         }
                         isSpeakingFromDialog = false;
@@ -687,14 +959,14 @@ class _ChatScreenState extends State<ChatScreen> {
         if (mounted) {
           setState(() {
             _isSpeaking = false;
-            _currentlySpeakingText = null;
+            _speakingMessageId = null;
           });
         }
       }
     });
   }
 
-  Future<void> _speak(String text) async {
+  Future<void> _speak(String text, {String? messageId}) async {
     if (text.trim().isEmpty || !mounted) return;
 
     // Clean the text before speaking
@@ -707,23 +979,41 @@ class _ChatScreenState extends State<ChatScreen> {
 
     print("Speaking cleaned text: $cleanText");
 
+    await _stopVoicePlayback();
     await _flutterTts.stop();
+    if (messageId != null) {
+      _ttsWaveProgressByMessageId[messageId] = 0.0;
+    }
+    _ttsCountAsNaturalCompletion = true;
     setState(() {
       _isSpeaking = true;
-      _currentlySpeakingText = cleanText; // show cleaned version in UI if needed
+      _speakingMessageId = messageId;
+      _ttsEstimatedSeconds = _estimateTtsSeconds(cleanText);
     });
+    _startTtsElapsedTicker();
+    _syncWaveAnimation();
 
     await _flutterTts.speak(cleanText);
   }
-  Future<void> _speakInEnglish(String text) async {
+
+  Future<void> _speakInEnglish(String text, {String? messageId}) async {
     if (text.trim().isEmpty || !mounted) return;
 
+    await _stopVoicePlayback();
     await _flutterTts.stop();
 
+    final trimmed = text.trim();
+    if (messageId != null) {
+      _ttsWaveProgressByMessageId[messageId] = 0.0;
+    }
+    _ttsCountAsNaturalCompletion = true;
     setState(() {
       _isSpeaking = true;
-      _currentlySpeakingText = text.trim();
+      _speakingMessageId = messageId;
+      _ttsEstimatedSeconds = _estimateTtsSeconds(trimmed);
     });
+    _startTtsElapsedTicker();
+    _syncWaveAnimation();
 
     await _flutterTts.setLanguage("en-US");
 
@@ -742,15 +1032,24 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
 
-    await _flutterTts.speak(text.trim());
+    await _flutterTts.speak(trimmed);
   }
 
   Future<void> _stopSpeaking() async {
+    final id = _speakingMessageId;
+    _ttsCountAsNaturalCompletion = false;
+    if (id != null && _ttsEstimatedSeconds > 0) {
+      final denom = (_ttsEstimatedSeconds * 1000).clamp(1, 999999999);
+      final p = (_ttsElapsed.inMilliseconds / denom).clamp(0.0, 1.0);
+      _ttsWaveProgressByMessageId[id] = p;
+    }
     await _flutterTts.stop();
     if (mounted) {
+      _stopTtsElapsedTicker();
+      _waveController.stop();
       setState(() {
         _isSpeaking = false;
-        _currentlySpeakingText = null;
+        _speakingMessageId = null;
       });
     }
   }
@@ -797,14 +1096,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    _restartTimer?.cancel();
-    _countdownTimer?.cancel();
+    if (_isRecordingVoice) {
+      unawaited(_voiceRecorder.stop());
+    }
     socketService.socket.off('message', _onSocketMessage);
     socketService.socket.off('aifeedback', _onAiFeedbackSocket);
     socketService.socket.off('typing', _onTypingSocket);
     _flutterTts.stop();
-    _speech.stop();
+    _pronStopTimer?.cancel();
+    unawaited(_chatVoicePlayer.stop());
+    unawaited(_voiceRecorder.dispose());
+    _chatVoicePlayer.dispose();
     _textController.removeListener(_onInputTextChanged);
+    _stopTtsElapsedTicker();
+    _waveController.dispose();
     _scrollController.dispose();
     _textController.dispose();
     super.dispose();
@@ -960,50 +1265,32 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          if (_isListening)
+          if (_isRecordingVoice)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
               decoration: BoxDecoration(
-                color: appColor.withOpacity(0.1),
+                color: Colors.redAccent.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: appColor.withOpacity(0.4)),
+                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.45)),
               ),
-              child: Column(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.mic, color: appColor, size: 28),
-                      const SizedBox(width: 10),
-                      Text(
-                        "Listening...",
-                        style: GoogleFonts.roboto(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: appColor,
-                        ),
+                  Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 22),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      'Recording… Tap mic again to send',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.roboto(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.redAccent,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _accumulatedTranscription.isEmpty ? "Speak now..." : _accumulatedTranscription,
-                    style: GoogleFonts.roboto(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    "Time left: $_remainingSeconds sec",
-                    style: GoogleFonts.roboto(
-                      fontSize: 16,
-                      color: _remainingSeconds <= 5 ? Colors.red : appColor,
-                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
@@ -1140,25 +1427,39 @@ class _ChatScreenState extends State<ChatScreen> {
 
                   if (_textController.text.trim().isEmpty)
                     GestureDetector(
-                      onTap: _toggleListening,
+                      onTap: _isVoiceUploading ? null : _toggleVoiceRecording,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: _isListening ? Colors.redAccent : const Color(0xFF3BA4E8),
+                          color: _isRecordingVoice
+                              ? Colors.redAccent
+                              : const Color(0xFF3BA4E8),
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: (_isListening ? Colors.redAccent : const Color(0xFF3BA4E8)).withOpacity(0.35),
-                              blurRadius: _isListening ? 26 : 12,
+                              color: (_isRecordingVoice
+                                      ? Colors.redAccent
+                                      : const Color(0xFF3BA4E8))
+                                  .withValues(alpha: 0.35),
+                              blurRadius: _isRecordingVoice ? 26 : 12,
                             ),
                           ],
                         ),
-                        child: Icon(
-                          _isListening ? Icons.mic : Icons.mic_none,
-                          color: Colors.white,
-                          size: 24,
-                        ),
+                        child: _isVoiceUploading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Icon(
+                                _isRecordingVoice ? Icons.stop : Icons.mic_none,
+                                color: Colors.white,
+                                size: 24,
+                              ),
                       ),
                     )
                   else
@@ -1174,6 +1475,13 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     ),
     );
+  }
+
+  String? _audioUrlForMessageId(String messageId) {
+    for (final m in _messages) {
+      if (m.id == messageId) return m.audioUrl;
+    }
+    return null;
   }
 
   void _toggleAiFeedbackForMessage(ChatMessage message) {
@@ -1192,7 +1500,10 @@ class _ChatScreenState extends State<ChatScreen> {
         if (socketService.isConnected) {
           _aiFeedbackLoadingIds.add(message.id);
           _pendingAiFeedbackMessageId = message.id;
-          socketService.emitAiFeedback(message.text);
+          socketService.emitAiFeedback(
+            message.text,
+            audioUrl: message.audioUrl,
+          );
         } else {
           _aiFeedbackErrorByMessageId[message.id] =
               'Not connected. Check your network and try again.';
@@ -1204,7 +1515,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMessageBubble(ChatMessage message) {
     final isUser = message.isUser;
-    final isThisMessageSpeaking = _currentlySpeakingText == message.text.trim();
+    final isThisMessageSpeaking =
+        _speakingMessageId == message.id && _isSpeaking;
     final partnerPhoto = widget.partnerDetails["photo"]?.toString();
     final showAiFeedbackPanel =
         isUser && _expandedAiFeedbackIds.contains(message.id);
@@ -1218,54 +1530,72 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Column(
         crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment:
-                isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-            children: [
-              if (!isUser)
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor: appColor,
-                  backgroundImage: partnerPhoto != null
-                      ? (partnerPhoto.startsWith("assets/")
-                          ? AssetImage(partnerPhoto) as ImageProvider
-                          : FileImage(File(partnerPhoto)))
-                      : null,
-                  child: partnerPhoto == null
-                      ? Icon(
-                          widget.partnerDetails["gender"]
-                                      ?.toString()
-                                      .toLowerCase() ==
-                                  "female"
-                              ? Icons.woman
-                              : Icons.man,
-                          color: Colors.white,
-                          size: 18,
-                        )
-                      : null,
-                ),
-              if (!isUser) const SizedBox(width: 8),
-              _smallActionChip(
-                label: isThisMessageSpeaking ? "Stop" : "Listen",
-                icon: isThisMessageSpeaking ? Icons.stop : Icons.volume_up,
-                onTap: () {
-                  if (isThisMessageSpeaking) {
-                    _stopSpeaking();
-                  } else {
-                    _speakInEnglish(message.text);
-                  }
-                },
-              ),
-              if (isUser) const SizedBox(width: 8),
-              if (isUser)
+          if (!isUser) ...[
+            Row(
+              mainAxisAlignment:
+                  isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+              children: [
+                if (!isUser)
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundColor: appColor,
+                    backgroundImage: partnerPhoto != null
+                        ? (partnerPhoto.startsWith("assets/")
+                            ? AssetImage(partnerPhoto) as ImageProvider
+                            : FileImage(File(partnerPhoto)))
+                        : null,
+                    child: partnerPhoto == null
+                        ? Icon(
+                            widget.partnerDetails["gender"]
+                                        ?.toString()
+                                        .toLowerCase() ==
+                                    "female"
+                                ? Icons.woman
+                                : Icons.man,
+                            color: Colors.white,
+                            size: 18,
+                          )
+                        : null,
+                  ),
+                if (!isUser) const SizedBox(width: 8),
+                Expanded(child: _buildTtsCapsule(message)),
+                if (isUser) const SizedBox(width: 8),
+                if (isUser)
+                  const CircleAvatar(
+                    radius: 14,
+                    backgroundColor: Color(0xFFE3F2FD),
+                    child: Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+          ] else if (message.isVoiceMessage) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Expanded(child: _buildVoiceCapsule(message)),
+                const SizedBox(width: 8),
                 const CircleAvatar(
                   radius: 14,
                   backgroundColor: Color(0xFFE3F2FD),
                   child: Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
+              ],
+            ),
+            const SizedBox(height: 6),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: const [
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Color(0xFFE3F2FD),
+                  child: Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+          ],
 
           Container(
             padding: EdgeInsets.symmetric(
@@ -1501,10 +1831,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final showGrammar = payload.grammar.original.isNotEmpty ||
         payload.grammar.corrected.isNotEmpty;
-    final showPron = payload.pronunciation.word.isNotEmpty ||
-        payload.pronunciation.status.isNotEmpty ||
-        payload.pronunciation.phonetic.isNotEmpty;
+    final voiceUrl = _audioUrlForMessageId(messageId);
+    final hasVoiceForPron =
+        voiceUrl != null && voiceUrl.trim().isNotEmpty;
+    final showPron = hasVoiceForPron &&
+        (payload.pronunciation.word.isNotEmpty ||
+            payload.pronunciation.status.isNotEmpty ||
+            payload.pronunciation.phonetic.isNotEmpty);
     final showVocab = payload.vocabulary.suggestions.isNotEmpty;
+    final fullSentence = payload.fullCorrectedSentence?.trim() ?? '';
+    final showFullSentence = fullSentence.isNotEmpty;
 
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxW),
@@ -1523,7 +1859,11 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(height: 12),
           ],
           if (showVocab) _buildVocabularyFeedbackCardFromData(payload.vocabulary),
-          if (!showGrammar && !showPron && !showVocab)
+          if (showFullSentence && (showGrammar || showPron || showVocab))
+            const SizedBox(height: 12),
+          if (showFullSentence)
+            _buildFullCorrectedSentenceCard(fullSentence),
+          if (!showGrammar && !showPron && !showVocab && !showFullSentence)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -1734,6 +2074,17 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     ],
+                    if ((p.practiceWord ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Practice word: ${p.practiceWord}',
+                        style: GoogleFonts.roboto(
+                          fontSize: 13,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1767,10 +2118,33 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: _fbRowBg,
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      Icons.graphic_eq,
-                      color: const Color(0xFF69F0AE),
-                      size: 22,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _isPronLoading
+                          ? null
+                          : (p.playbackUrl != null && p.playbackUrl!.isNotEmpty)
+                              ? () => _playPronunciationSegment(p)
+                              : _practiceAudioUnavailable,
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: _isPronLoading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFF69F0AE),
+                                ),
+                              )
+                            : Icon(
+                                Icons.graphic_eq,
+                                color: (p.playbackUrl != null &&
+                                        p.playbackUrl!.isNotEmpty)
+                                    ? const Color(0xFF69F0AE)
+                                    : Colors.white38,
+                                size: 22,
+                              ),
+                      ),
                     ),
                   ),
                 ],
@@ -1803,6 +2177,33 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFullCorrectedSentenceCard(String text) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: _fbCardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _fbGrammarGreen.withValues(alpha: 0.55)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFeedbackCategoryChip('Full corrected sentence'),
+          const SizedBox(height: 12),
+          Text(
+            text,
+            style: GoogleFonts.roboto(
+              fontSize: 15,
+              height: 1.45,
+              color: _fbGrammarGreenText,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -1864,8 +2265,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
                   ),
-                  Icon(Icons.bookmark_border,
-                      color: Colors.white70, size: 20),
                 ],
               ),
             );
@@ -1875,37 +2274,180 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _smallActionChip({
-    required String label,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEDEDED),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: Colors.grey[700]),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: GoogleFonts.roboto(
-                fontSize: 12,
-                color: Colors.grey[700],
-                fontWeight: FontWeight.w500,
-              ),
+  static const Color _ttsCapsuleBg = Color(0xFFF0F0F2);
+  static const Color _ttsPlayGradientA = Color(0xFF5B8CFF);
+  static const Color _ttsPlayGradientB = Color(0xFF7B61FF);
+  static const Color _ttsWaveColor = Color(0xFF6B7FD7);
+  static const Color _ttsWaveUnplayed = Color(0xFF1A1A1A);
+
+  double _waveProgressForMessage(ChatMessage message, bool isPlaying) {
+    if (isPlaying && _speakingMessageId == message.id) {
+      final denom = (_ttsEstimatedSeconds * 1000).clamp(1, 999999999);
+      return (_ttsElapsed.inMilliseconds / denom).clamp(0.0, 1.0);
+    }
+    return _ttsWaveProgressByMessageId[message.id] ?? 0.0;
+  }
+
+  Widget _buildTtsCapsule(ChatMessage message) {
+    final isPlaying = _speakingMessageId == message.id && _isSpeaking;
+    final waveProgress = _waveProgressForMessage(message, isPlaying);
+    final est = _estimateTtsSeconds(message.text);
+    final elapsedSec = (_ttsElapsed.inMilliseconds / 1000).floor();
+    final timeLabel = isPlaying
+        ? _formatMmSs(math.min(elapsedSec, _ttsEstimatedSeconds))
+        : _formatMmSs(est);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (isPlaying) {
+            _stopSpeaking();
+          } else {
+            _speakInEnglish(message.text, messageId: message.id);
+          }
+        },
+        borderRadius: BorderRadius.circular(28),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: _ttsCapsuleBg,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(5, 5, 11, 5),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [_ttsPlayGradientA, _ttsPlayGradientB],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _ttsPlayGradientB.withValues(alpha: 0.32),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 26,
+                    child: _ChatTtsWaveform(
+                      seed: message.id.hashCode,
+                      isAnimating: isPlaying,
+                      listenable: _waveController,
+                      playedProgress: waveProgress,
+                      playedColor: _ttsWaveColor,
+                      unplayedColor: _ttsWaveUnplayed,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  timeLabel,
+                  style: GoogleFonts.roboto(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _buildVoiceCapsule(ChatMessage message) {
+    final isPlaying = _playingVoiceMessageId == message.id;
+    final waveProgress = _voiceProgressForMessage(message);
+    final timeLabel = _voiceTimeLabelForMessage(message);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _toggleVoiceMessagePlayback(message),
+        borderRadius: BorderRadius.circular(28),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: _ttsCapsuleBg,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(5, 5, 11, 5),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [_ttsPlayGradientA, _ttsPlayGradientB],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _ttsPlayGradientB.withValues(alpha: 0.32),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 26,
+                    child: _ChatTtsWaveform(
+                      seed: message.id.hashCode,
+                      isAnimating: isPlaying,
+                      listenable: _waveController,
+                      playedProgress: waveProgress,
+                      playedColor: _ttsWaveColor,
+                      unplayedColor: _ttsWaveUnplayed,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  timeLabel,
+                  style: GoogleFonts.roboto(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // Add this helper method in _ChatScreenState class
   String _cleanTextForSpeech(String text) {
     // 1. Remove emojis (split into multiple safe character classes)
@@ -1937,6 +2479,134 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+class _ChatTtsWaveform extends StatelessWidget {
+  const _ChatTtsWaveform({
+    required this.seed,
+    required this.isAnimating,
+    required this.listenable,
+    required this.playedProgress,
+    required this.playedColor,
+    required this.unplayedColor,
+  });
+
+  final int seed;
+  final bool isAnimating;
+  final Listenable listenable;
+  final double playedProgress;
+  final Color playedColor;
+  final Color unplayedColor;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget paintWithPhase(double phase) {
+      return CustomPaint(
+        painter: _ChatTtsWaveformPainter(
+          phase: phase,
+          isAnimating: isAnimating,
+          playedProgress: playedProgress.clamp(0.0, 1.0),
+          playedColor: playedColor,
+          unplayedColor: unplayedColor,
+          seed: seed,
+        ),
+        child: const SizedBox.expand(),
+      );
+    }
+
+    if (!isAnimating) {
+      return paintWithPhase(0);
+    }
+    return AnimatedBuilder(
+      animation: listenable,
+      builder: (context, child) {
+        final phase = listenable is Animation<double>
+            ? (listenable as Animation<double>).value
+            : 0.0;
+        return paintWithPhase(phase);
+      },
+    );
+  }
+}
+
+class _ChatTtsWaveformPainter extends CustomPainter {
+  _ChatTtsWaveformPainter({
+    required this.phase,
+    required this.isAnimating,
+    required this.playedProgress,
+    required this.playedColor,
+    required this.unplayedColor,
+    required this.seed,
+  });
+
+  final double phase;
+  final bool isAnimating;
+  final double playedProgress;
+  final Color playedColor;
+  final Color unplayedColor;
+  final int seed;
+
+  double _pseudo01(int i) {
+    var x = seed ^ (i * 0x9E3779B9);
+    x = x & 0x7fffffff;
+    return (x % 1001) / 1001.0;
+  }
+
+  void _drawBars(
+    Canvas canvas,
+    Size size,
+    Color color,
+  ) {
+    const barCount = 26;
+    const gap = 2.0;
+    final totalGap = gap * (barCount - 1);
+    final barW = (size.width - totalGap) / barCount;
+    final midY = size.height / 2;
+    final maxH = size.height;
+    for (var i = 0; i < barCount; i++) {
+      final x = i * (barW + gap) + barW / 2;
+      final base = 0.22 + 0.58 * _pseudo01(i);
+      final wobble = isAnimating
+          ? 0.55 +
+              0.45 *
+                  (0.5 +
+                      0.5 *
+                          math.sin(phase * 2 * math.pi * 2 + i * 0.48))
+          : 1.0;
+      final amp = (base * wobble).clamp(0.12, 1.0);
+      final h = (maxH * amp).clamp(3.0, maxH);
+      final paint = Paint()
+        ..color = color
+        ..strokeWidth = math.max(1.2, barW * 0.75)
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(
+        Offset(x, midY - h / 2),
+        Offset(x, midY + h / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _drawBars(canvas, size, unplayedColor);
+    final p = playedProgress.clamp(0.0, 1.0);
+    if (p <= 0) return;
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(0, 0, size.width * p, size.height));
+    _drawBars(canvas, size, playedColor);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChatTtsWaveformPainter oldDelegate) {
+    return oldDelegate.phase != phase ||
+        oldDelegate.isAnimating != isAnimating ||
+        oldDelegate.seed != seed ||
+        oldDelegate.playedProgress != playedProgress ||
+        oldDelegate.playedColor != playedColor ||
+        oldDelegate.unplayedColor != unplayedColor;
+  }
+}
+
 class ChatMessage {
   final String id;
   final String text;
@@ -1945,11 +2615,18 @@ class ChatMessage {
   /// Quick-reply chip text from socket `suggestion` (not `example`).
   final String? suggestion;
 
+  /// HTTPS URL from server after voice upload; user sees [text] only (no in-bubble player).
+  final String? audioUrl;
+
+  bool get isVoiceMessage =>
+      isUser && audioUrl != null && audioUrl!.trim().isNotEmpty;
+
   ChatMessage({
     required this.text,
     required this.isUser,
     this.hasAudio = false,
     this.suggestion,
+    this.audioUrl,
     String? id,
   }) : id = id ??
             '${DateTime.now().microsecondsSinceEpoch}_${text.hashCode}';

@@ -3,10 +3,29 @@
  * Pronunciation score is indicative only (not real speech analysis).
  */
 
+/** Optional audioUrl: when present, server should run pronunciation from audio only. */
 export type AiFeedbackEmit =
-  | { text: string }
-  | { message: string }
-  | { content: string };
+  | {
+      text: string;
+      audioUrl?: string;
+      hasAudio?: boolean;
+      pronunciationRequested?: boolean;
+      pronunciationMode?: 'audio' | 'disabled_without_audio';
+    }
+  | {
+      message: string;
+      audioUrl?: string;
+      hasAudio?: boolean;
+      pronunciationRequested?: boolean;
+      pronunciationMode?: 'audio' | 'disabled_without_audio';
+    }
+  | {
+      content: string;
+      audioUrl?: string;
+      hasAudio?: boolean;
+      pronunciationRequested?: boolean;
+      pronunciationMode?: 'audio' | 'disabled_without_audio';
+    };
 
 export type AiFeedbackTyping = {
   type: 'typing';
@@ -54,6 +73,9 @@ export type AiFeedbackAi = {
   grammar?: GrammarBlock;
   pronunciation?: PronunciationBlock;
   vocabulary?: VocabularyBlock;
+  /** Full grammatically correct sentence as one string (show last in UI). */
+  fullCorrectedSentence?: string;
+  fullSentence?: string;
   timestamp?: string;
 };
 

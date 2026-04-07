@@ -145,67 +145,53 @@ class _ChatlistState extends State<Chatlist> {
                     return SingleChildScrollView(
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding:
-                          const EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, 8),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: viewportConstraints.maxHeight,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _buildHeaderBanner(),
-                                const SizedBox(height: 12),
-                                _buildSectionLabel('Partner Name'),
-                                const SizedBox(height: 6),
-                                _buildNameField(),
-                                const SizedBox(height: 12),
-                                _buildSectionLabel('Gender'),
-                                const SizedBox(height: 8),
-                                _buildGenderRow(),
-                                const SizedBox(height: 10),
-                                _buildSectionLabel('Select a Partner Look'),
-                                const SizedBox(height: 6),
-                                if (contentWidth > 0)
-                                  _buildPartnerLookGrid(contentWidth),
-                              ],
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        12,
+                        horizontalPadding,
+                        20,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildHeaderBanner(),
+                          const SizedBox(height: 8),
+                          _buildSectionLabel('Partner Name'),
+                          const SizedBox(height: 4),
+                          _buildNameField(),
+                          const SizedBox(height: 8),
+                          _buildSectionLabel('Gender'),
+                          const SizedBox(height: 6),
+                          _buildGenderRow(),
+                          const SizedBox(height: 6),
+                          _buildSectionLabel('Select a Partner Look'),
+                          const SizedBox(height: 4),
+                          if (contentWidth > 0)
+                            _buildPartnerLookGrid(contentWidth),
+                          const SizedBox(height: 6),
+                          _buildOrDivider(),
+                          const SizedBox(height: 4),
+                          Center(
+                            child: Text(
+                              'Add Your Partner Photo',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey.shade600,
+                              ),
                             ),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                const SizedBox(height: 8),
-                                _buildOrDivider(),
-                                const SizedBox(height: 6),
-                                Center(
-                                  child: Text(
-                                    'Add Your Partner Photo',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                _buildGalleryButton(),
-                              ],
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 4),
+                          _buildGalleryButton(),
+                        ],
                       ),
                     );
                   },
                 ),
               ),
               Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, 12 + bottomInset),
+                padding: EdgeInsets.fromLTRB(20, 10, 20, 12 + bottomInset),
                 child: _buildContinueButton(),
               ),
             ],
@@ -217,7 +203,7 @@ class _ChatlistState extends State<Chatlist> {
 
   Widget _buildHeaderBanner() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         gradient: const LinearGradient(
@@ -284,7 +270,7 @@ class _ChatlistState extends State<Chatlist> {
           ),
           border: InputBorder.none,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         ),
         style: GoogleFonts.inter(
           fontSize: 15,
@@ -329,7 +315,7 @@ class _ChatlistState extends State<Chatlist> {
         borderRadius: BorderRadius.circular(14),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             gradient: isSelected
@@ -403,17 +389,21 @@ class _ChatlistState extends State<Chatlist> {
 
   static const int _gridCrossAxisCount = 3;
   static const int _gridRowCount = 2;
+  /// Wider than tall cells so the grid uses less vertical space (no scroll until keyboard).
+  static const double _partnerLookAspectRatio = 1.3;
 
   /// Height derived from [width] so the grid scrolls with the form when the keyboard is open.
   Widget _buildPartnerLookGrid(double width) {
-    const gap = 10.0;
+    const crossGap = 10.0;
+    const mainGap = 5.0;
     if (width <= 0) {
       return const SizedBox.shrink();
     }
     final cellW =
-        (width - gap * (_gridCrossAxisCount - 1)) / _gridCrossAxisCount;
+        (width - crossGap * (_gridCrossAxisCount - 1)) / _gridCrossAxisCount;
+    final cellH = cellW / _partnerLookAspectRatio;
     final gridHeight =
-        cellW * _gridRowCount + gap * (_gridRowCount - 1);
+        cellH * _gridRowCount + mainGap * (_gridRowCount - 1);
 
     return SizedBox(
       height: gridHeight,
@@ -422,9 +412,9 @@ class _ChatlistState extends State<Chatlist> {
         padding: EdgeInsets.zero,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: _gridCrossAxisCount,
-          crossAxisSpacing: gap,
-          mainAxisSpacing: gap,
-          childAspectRatio: 1,
+          crossAxisSpacing: crossGap,
+          mainAxisSpacing: mainGap,
+          childAspectRatio: _partnerLookAspectRatio,
         ),
         itemCount: _partnerLooks.length,
         itemBuilder: (context, index) {
@@ -462,7 +452,7 @@ class _ChatlistState extends State<Chatlist> {
                         alignment: Alignment.center,
                         child: Icon(
                           Icons.person,
-                          size: 28,
+                          size: 22,
                           color: Colors.grey.shade400,
                         ),
                       ),
@@ -471,8 +461,8 @@ class _ChatlistState extends State<Chatlist> {
                 ),
                 if (isSelected)
                   Positioned(
-                    top: 6,
-                    right: 6,
+                    top: 4,
+                    right: 4,
                     child: Container(
                       padding: const EdgeInsets.all(3),
                       decoration: const BoxDecoration(
@@ -545,7 +535,7 @@ class _ChatlistState extends State<Chatlist> {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            padding: const EdgeInsets.symmetric(vertical: 10),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
