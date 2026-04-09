@@ -51,6 +51,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Timer? _pronStopTimer;
   String? _activePronUrl;
   bool _isPronPlaying = false;
+  // ignore: unused_field
   bool _isPronLoading = false;
   double? _pendingPronStartRatio;
   double? _pendingPronEndRatio;
@@ -88,6 +89,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final Map<String, AiFeedbackAiPayload> _aiFeedbackResultByMessageId = {};
   final Map<String, String> _aiFeedbackErrorByMessageId = {};
   final Set<String> _aiFeedbackLoadingIds = {};
+  final Set<String> _pendingQuickReplyMessageIds = {};
 
   String _getLocaleFromPartnerLanguage(String partnerLang) {
     String lower = partnerLang.toLowerCase().trim();
@@ -138,6 +140,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final suggestionText = _coerceTrimmedString(data['suggestion']);
     final audioUrl = _coerceTrimmedString(data['audioUrl']);
     final clientId = _coerceTrimmedString(data['clientMessageId']);
+    final aiTtsText =
+        _coerceTrimmedString(data['tts_text']) ??
+        _coerceTrimmedString(data['ttsText']);
 
     if (type == 'user' &&
         clientId != null &&
@@ -149,28 +154,33 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     setState(() {
       if (type == 'user') {
         final id = clientId ?? _newChatMessageId();
+        final fromQuickReply =
+            clientId != null && _pendingQuickReplyMessageIds.remove(clientId);
         _messages.add(ChatMessage(
           text: messageText,
           isUser: true,
           id: id,
           audioUrl: audioUrl,
+          isQuickReply: fromQuickReply,
         ));
       } else if (type == 'ai') {
         final msgId = _newChatMessageId();
+        final ttsPlaybackText = aiTtsText ?? messageText;
         _messages.add(ChatMessage(
           text: messageText,
           isUser: false,
           hasAudio: true,
           suggestion: suggestionText,
+          aiTtsText: aiTtsText,
           id: msgId,
         ));
         if (!_isFirstAiMessageReceived) {
           _isFirstAiMessageReceived = true;
           Future.microtask(() {
-            if (mounted) _speak(messageText, messageId: msgId);
+            if (mounted) _speakInEnglish(ttsPlaybackText, messageId: msgId);
           });
         } else {
-          _speak(messageText, messageId: msgId);
+          _speakInEnglish(ttsPlaybackText, messageId: msgId);
         }
       }
     });
@@ -327,6 +337,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   String _newChatMessageId() =>
       '${DateTime.now().microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
+
+  String _normalizeSttText(String raw) {
+    var text = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.isEmpty) return text;
+
+    final opener = RegExp(
+      r'^(yes|no|okay|ok|well)\s+',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (opener != null) {
+      final word = opener.group(1) ?? '';
+      text = '$word, ${text.substring(opener.end)}';
+    }
+
+    final firstLetter = RegExp(r'[A-Za-z]').firstMatch(text);
+    if (firstLetter != null) {
+      final i = firstLetter.start;
+      text = '${text.substring(0, i)}${text[i].toUpperCase()}${text.substring(i + 1)}';
+    }
+
+    if (!RegExp(r'[.!?]$').hasMatch(text)) {
+      final lower = text.toLowerCase();
+      final looksQuestion = RegExp(
+        r'^(who|what|when|where|why|how|which|whose|whom|is|are|am|was|were|do|does|did|can|could|will|would|should|have|has|had)\b',
+      ).hasMatch(lower);
+      text += looksQuestion ? '?' : '.';
+    }
+    return text;
+  }
 
   Future<void> _initializeTts() async {
     await _flutterTts.setVolume(1.0);
@@ -583,6 +622,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _pendingPronEndRatio = null;
   }
 
+  // ignore: unused_element
   Future<void> _playPronunciationSegment(AiFeedbackPronunciation p) async {
     final url = p.playbackUrl;
     if (url == null || url.isEmpty) {
@@ -758,7 +798,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
       final tr = result.transcription.trim().isEmpty
           ? '(Voice message)'
-          : result.transcription.trim();
+          : _normalizeSttText(result.transcription);
       final id = _newChatMessageId();
       setState(() {
         _messages.add(ChatMessage(
@@ -966,36 +1006,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
   }
 
-  Future<void> _speak(String text, {String? messageId}) async {
-    if (text.trim().isEmpty || !mounted) return;
-
-    // Clean the text before speaking
-    final cleanText = _cleanTextForSpeech(text);
-
-    if (cleanText.isEmpty) {
-      print("No speakable text after cleaning: $text");
-      return;
-    }
-
-    print("Speaking cleaned text: $cleanText");
-
-    await _stopVoicePlayback();
-    await _flutterTts.stop();
-    if (messageId != null) {
-      _ttsWaveProgressByMessageId[messageId] = 0.0;
-    }
-    _ttsCountAsNaturalCompletion = true;
-    setState(() {
-      _isSpeaking = true;
-      _speakingMessageId = messageId;
-      _ttsEstimatedSeconds = _estimateTtsSeconds(cleanText);
-    });
-    _startTtsElapsedTicker();
-    _syncWaveAnimation();
-
-    await _flutterTts.speak(cleanText);
-  }
-
   Future<void> _speakInEnglish(String text, {String? messageId}) async {
     if (text.trim().isEmpty || !mounted) return;
 
@@ -1078,11 +1088,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
   }
 
-  void _sendTextMessage() {
+  void _sendTextMessage({bool fromQuickReply = false}) {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
+    final clientMessageId = _newChatMessageId();
+    if (fromQuickReply) {
+      _pendingQuickReplyMessageIds.add(clientMessageId);
+    }
 
-    socketService.sendMessage(text);
+    socketService.sendMessage(text, clientMessageId: clientMessageId);
     _textController.clear();
     _scrollToBottom();
 
@@ -1344,7 +1358,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       return GestureDetector(
                         onTap: () {
                           _textController.text = suggestion;
-                          _sendTextMessage();
+                          _sendTextMessage(fromQuickReply: true);
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1477,13 +1491,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  String? _audioUrlForMessageId(String messageId) {
-    for (final m in _messages) {
-      if (m.id == messageId) return m.audioUrl;
-    }
-    return null;
-  }
-
   void _toggleAiFeedbackForMessage(ChatMessage message) {
     if (!message.isUser) return;
     setState(() {
@@ -1599,10 +1606,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: isUser ? 10 : 14,
-              vertical: isUser ? 10 : 12,
+              horizontal: 14,
+              vertical: 12,
             ),
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+            constraints: BoxConstraints(
+              minWidth: isUser ? MediaQuery.of(context).size.width * 0.55 : 0,
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
             decoration: BoxDecoration(
               gradient: isUser
                   ? const LinearGradient(
@@ -1621,11 +1631,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
             child: Column(
               crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+                  CrossAxisAlignment.start,
               children: [
                 Text(
                   message.text,
-                  textAlign: isUser ? TextAlign.center : TextAlign.start,
+                  textAlign: TextAlign.start,
                   style: GoogleFonts.roboto(
                     fontSize: 16,
                     color: isUser ? Colors.white : Colors.black87,
@@ -1670,32 +1680,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                ] else ...[
+                ] else if (!(message.isQuickReply ?? false)) ...[
                   const SizedBox(height: 10),
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => _toggleAiFeedbackForMessage(message),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: showAiFeedbackPanel
-                                ? appColor
-                                : Colors.transparent,
-                            width: 1.5,
+                  Center(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => _toggleAiFeedbackForMessage(message),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: showAiFeedbackPanel
+                                  ? appColor
+                                  : Colors.transparent,
+                              width: 1.5,
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          "AI feedback",
-                          style: GoogleFonts.roboto(
-                            fontSize: 12,
-                            color: appColor,
-                            fontWeight: FontWeight.w700,
+                          child: Text(
+                            "AI feedback",
+                            style: GoogleFonts.roboto(
+                              fontSize: 12,
+                              color: appColor,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
@@ -1710,7 +1722,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               padding: const EdgeInsets.only(top: 10),
               child: _buildAiFeedbackCardsStack(
                 messageId: message.id,
-                partnerPhoto: partnerPhoto,
               ),
             ),
         ],
@@ -1719,58 +1730,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   // --- AI feedback (Socket `aifeedback` + `typing` with type aifeedback) ---
-  static const Color _fbCardBg = Color(0xFF2C2C2E);
-  static const Color _fbRowBg = Color(0xFF3A3A3C);
+  static const Color _fbCardBg = Color(0xFF262733);
+  static const Color _fbSectionBg = Color(0xFF2E3040);
+  static const Color _fbRowBg = Color(0xFF1F2130);
   static const Color _fbPurple = Color(0xFF7B61FF);
   static const Color _fbGrammarGreen = Color(0xFF1B5E20);
   static const Color _fbGrammarGreenText = Color(0xFF69F0AE);
 
-  Color _pronunciationScoreColor(double score) {
-    if (score < 40) return const Color(0xFFEF5350);
-    if (score < 70) return const Color(0xFFFFA726);
-    return const Color(0xFF69F0AE);
-  }
-
-  List<TextSpan> _grammarOriginalSpans(
-    String original,
-    List<String> errors,
-    TextStyle baseStyle,
-    TextStyle errorStyle,
-  ) {
-    final spans = <TextSpan>[];
-    if (original.isEmpty) return spans;
-    final sorted = List<String>.from(errors)
-      ..sort((a, b) => b.length.compareTo(a.length));
-    var rest = original;
-    while (rest.isNotEmpty) {
-      int? bestIdx;
-      String? bestErr;
-      for (final e in sorted) {
-        if (e.isEmpty) continue;
-        final i = rest.indexOf(e);
-        if (i >= 0 && (bestIdx == null || i < bestIdx)) {
-          bestIdx = i;
-          bestErr = e;
-        }
-      }
-      if (bestIdx == null || bestErr == null) {
-        spans.add(TextSpan(text: rest, style: baseStyle));
-        break;
-      }
-      if (bestIdx > 0) {
-        spans.add(TextSpan(text: rest.substring(0, bestIdx), style: baseStyle));
-      }
-      spans.add(TextSpan(text: bestErr, style: errorStyle));
-      rest = rest.substring(bestIdx + bestErr.length);
-    }
-    return spans;
-  }
-
   Widget _buildAiFeedbackCardsStack({
     required String messageId,
-    required String? partnerPhoto,
   }) {
-    final maxW = MediaQuery.of(context).size.width * 0.75;
+    final maxW = MediaQuery.of(context).size.width * 0.72;
     final err = _aiFeedbackErrorByMessageId[messageId];
     if (err != null && err.isNotEmpty) {
       return ConstrainedBox(
@@ -1829,439 +1799,289 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return const SizedBox.shrink();
     }
 
-    final showGrammar = payload.grammar.original.isNotEmpty ||
-        payload.grammar.corrected.isNotEmpty;
-    final voiceUrl = _audioUrlForMessageId(messageId);
-    final hasVoiceForPron =
-        voiceUrl != null && voiceUrl.trim().isNotEmpty;
-    final showPron = hasVoiceForPron &&
-        (payload.pronunciation.word.isNotEmpty ||
-            payload.pronunciation.status.isNotEmpty ||
-            payload.pronunciation.phonetic.isNotEmpty);
-    final showVocab = payload.vocabulary.suggestions.isNotEmpty;
-    final fullSentence = payload.fullCorrectedSentence?.trim() ?? '';
-    final showFullSentence = fullSentence.isNotEmpty;
+    final showCorrectSentence = !payload.correctSentence.isEmpty;
+    final showImproveSentence = !payload.improveSentence.isEmpty;
+    final showMoreWays = payload.moreWaysToSay.isNotEmpty;
 
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxW),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (showGrammar) ...[
-            _buildGrammarFeedbackCardFromData(payload.grammar),
-            const SizedBox(height: 12),
-          ],
-          if (showPron) ...[
-            _buildPronunciationFeedbackCardFromData(
-              payload.pronunciation,
-              partnerPhoto,
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (showVocab) _buildVocabularyFeedbackCardFromData(payload.vocabulary),
-          if (showFullSentence && (showGrammar || showPron || showVocab))
-            const SizedBox(height: 12),
-          if (showFullSentence)
-            _buildFullCorrectedSentenceCard(fullSentence),
-          if (!showGrammar && !showPron && !showVocab && !showFullSentence)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _fbCardBg,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
+      child: _buildFeedbackCardShell(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showCorrectSentence) _buildCorrectSentenceCard(payload.correctSentence),
+            if (showCorrectSentence && (showImproveSentence || showMoreWays))
+              const SizedBox(height: 10),
+            if (showImproveSentence) _buildImproveSentenceCard(payload.improveSentence),
+            if (showImproveSentence && showMoreWays) const SizedBox(height: 10),
+            if (showMoreWays) _buildMoreWaysToSayCard(payload.moreWaysToSay),
+            if (!showCorrectSentence && !showImproveSentence && !showMoreWays)
+              Text(
                 'No structured feedback in this response.',
                 style: GoogleFonts.roboto(fontSize: 14, color: Colors.white54),
               ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeedbackCategoryChip(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: _fbPurple,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.roboto(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildGrammarFeedbackCardFromData(AiFeedbackGrammar g) {
-    final base = GoogleFonts.roboto(
-      fontSize: 14,
-      height: 1.45,
-      color: Colors.white,
-    );
-    const errStyle = TextStyle(
-      color: Color(0xFFEF5350),
-      fontWeight: FontWeight.w600,
-      fontSize: 14,
-      height: 1.45,
-    );
+  Widget _buildFeedbackCategoryChip(
+    String label, {
+    required IconData icon,
+    required Color bg,
+    required Color border,
+    Color textColor = Colors.white,
+  }) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: border.withValues(alpha: 0.55), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: textColor.withValues(alpha: 0.95)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: textColor,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeedbackCardShell({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
       decoration: BoxDecoration(
         color: _fbCardBg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
       ),
+      child: child,
+    );
+  }
+
+  Widget _buildFeedbackSectionCard({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+      decoration: BoxDecoration(
+        color: _fbSectionBg,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildCorrectSentenceCard(AiFeedbackCorrectSentence sentence) {
+    return _buildFeedbackSectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildFeedbackCategoryChip('Grammar'),
-          const SizedBox(height: 14),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: 28,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 22,
-                        height: 22,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFE53935),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.close, color: Colors.white, size: 14),
-                      ),
-                      Expanded(
-                        child: Container(
-                          width: 2,
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      Container(
-                        width: 22,
-                        height: 22,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF43A047),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.check, color: Colors.white, size: 14),
-                      ),
-                    ],
+          _buildFeedbackCategoryChip(
+            'Correct Sentence',
+            icon: Icons.check_circle_rounded,
+            bg: const Color(0xFF284A35),
+            border: const Color(0xFF58C686),
+            textColor: const Color(0xFFD4FFE8),
+          ),
+          const SizedBox(height: 10),
+        if (sentence.incorrect.isNotEmpty)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                margin: const EdgeInsets.only(top: 2),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE15B64),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded, size: 15, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: _fbRowBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    sentence.incorrect,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.8,
+                      height: 1.35,
+                      color: const Color(0xFFFF8E8E),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
+              ),
+            ],
+          ),
+          if (sentence.incorrect.isNotEmpty && sentence.corrected.isNotEmpty) const SizedBox(height: 8),
+        if (sentence.corrected.isNotEmpty)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                margin: const EdgeInsets.only(top: 2),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF50B67C),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_rounded, size: 15, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: _fbGrammarGreen,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    sentence.corrected,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.8,
+                      height: 1.35,
+                      color: _fbGrammarGreenText,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (sentence.tip.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 1.5, right: 6),
+                  child: Icon(Icons.lightbulb_rounded, color: Color(0xFFF8D46B), size: 15),
+                ),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (g.original.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _fbRowBg,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text.rich(
-                            TextSpan(
-                              children: _grammarOriginalSpans(
-                                g.original,
-                                g.errors,
-                                base,
-                                errStyle,
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (g.original.isNotEmpty && g.corrected.isNotEmpty)
-                        const SizedBox(height: 10),
-                      if (g.corrected.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _fbGrammarGreen,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            g.corrected,
-                            style: GoogleFonts.roboto(
-                              fontSize: 14,
-                              height: 1.45,
-                              color: _fbGrammarGreenText,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                    ],
+                  child: Text(
+                    'Tip: ${sentence.tip}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.2,
+                      height: 1.35,
+                    color: const Color(0xFFE6E7EF),
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildPronunciationFeedbackCardFromData(
-    AiFeedbackPronunciation p,
-    String? partnerPhoto,
-  ) {
-    final scoreColor = _pronunciationScoreColor(p.score);
-    final pct = '${p.score.round()}%';
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      decoration: BoxDecoration(
-        color: _fbCardBg,
-        borderRadius: BorderRadius.circular(16),
-      ),
+  Widget _buildImproveSentenceCard(AiFeedbackImproveSentence improve) {
+    return _buildFeedbackSectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildFeedbackCategoryChip('Pronunciation'),
-          const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (p.word.isNotEmpty)
-                      Text(
-                        p.word,
-                        style: GoogleFonts.roboto(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    if (p.phonetic.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        p.phonetic,
-                        style: GoogleFonts.roboto(
-                          fontSize: 14,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    Text(
-                      pct,
-                      style: GoogleFonts.roboto(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w800,
-                        color: scoreColor,
-                        height: 1,
-                      ),
-                    ),
-                    if (p.status.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        p.status,
-                        style: GoogleFonts.roboto(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: scoreColor,
-                        ),
-                      ),
-                    ],
-                    if ((p.practiceWord ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Practice word: ${p.practiceWord}',
-                        style: GoogleFonts.roboto(
-                          fontSize: 13,
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Column(
-                children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: _fbRowBg,
-                    backgroundImage: partnerPhoto != null
-                        ? (partnerPhoto.startsWith('assets/')
-                            ? AssetImage(partnerPhoto) as ImageProvider
-                            : FileImage(File(partnerPhoto)))
-                        : null,
-                    child: partnerPhoto == null
-                        ? Icon(
-                            widget.partnerDetails['gender']
-                                        ?.toString()
-                                        .toLowerCase() ==
-                                    'female'
-                                ? Icons.woman
-                                : Icons.man,
-                            color: Colors.white54,
-                            size: 24,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: const BoxDecoration(
-                      color: _fbRowBg,
-                      shape: BoxShape.circle,
-                    ),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _isPronLoading
-                          ? null
-                          : (p.playbackUrl != null && p.playbackUrl!.isNotEmpty)
-                              ? () => _playPronunciationSegment(p)
-                              : _practiceAudioUnavailable,
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: _isPronLoading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Color(0xFF69F0AE),
-                                ),
-                              )
-                            : Icon(
-                                Icons.graphic_eq,
-                                color: (p.playbackUrl != null &&
-                                        p.playbackUrl!.isNotEmpty)
-                                    ? const Color(0xFF69F0AE)
-                                    : Colors.white38,
-                                size: 22,
-                              ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          _buildFeedbackCategoryChip(
+            'Improve Sentence',
+            icon: Icons.auto_awesome_rounded,
+            bg: const Color(0xFF2E3157),
+            border: const Color(0xFF7A8EFF),
+            textColor: const Color(0xFFE7ECFF),
           ),
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                onTap: () {
-                  if (p.word.trim().isNotEmpty) {
-                    _speakInEnglish(p.word.trim());
-                  }
-                },
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Text(
-                    'Practice',
-                    style: GoogleFonts.roboto(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFullCorrectedSentenceCard(String text) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      decoration: BoxDecoration(
-        color: _fbCardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _fbGrammarGreen.withValues(alpha: 0.55)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildFeedbackCategoryChip('Full corrected sentence'),
-          const SizedBox(height: 12),
-          Text(
-            text,
-            style: GoogleFonts.roboto(
-              fontSize: 15,
-              height: 1.45,
-              color: _fbGrammarGreenText,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVocabularyFeedbackCardFromData(AiFeedbackVocabulary vocab) {
-    final rows = vocab.suggestions;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      decoration: BoxDecoration(
-        color: _fbCardBg,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildFeedbackCategoryChip('Vocabulary'),
-          const SizedBox(height: 14),
-          ...rows.asMap().entries.map((e) {
-            final i = e.key;
-            final r = e.value;
-            final isLast = i == rows.length - 1;
-            return Container(
-              margin: EdgeInsets.only(bottom: isLast ? 0 : 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          const SizedBox(height: 10),
+          if (improve.sentence.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
               decoration: BoxDecoration(
                 color: _fbRowBg,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      r.original,
-                      style: GoogleFonts.roboto(
-                        fontSize: 13,
-                        color: Colors.white,
-                        height: 1.3,
-                      ),
+              child: Text(
+                improve.sentence,
+                style: GoogleFonts.poppins(
+                  fontSize: 12.8,
+                  height: 1.35,
+                  color: const Color(0xFFE6D8FF),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          if (improve.tip.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 1.5, right: 6),
+                  child: Icon(Icons.lightbulb_rounded, color: Color(0xFFF8D46B), size: 15),
+                ),
+                Expanded(
+                  child: Text(
+                    'Tip: ${improve.tip}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.2,
+                      height: 1.35,
+                      color: Colors.white70,
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Icon(Icons.arrow_forward,
-                        color: Colors.white54, size: 18),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMoreWaysToSayCard(List<String> phrases) {
+    return _buildFeedbackSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFeedbackCategoryChip(
+            'More Ways to Say',
+            icon: Icons.chat_bubble_rounded,
+            bg: const Color(0xFF56355E),
+            border: const Color(0xFFE58BCE),
+            textColor: const Color(0xFFFFE3F7),
+          ),
+          const SizedBox(height: 10),
+          ...phrases.asMap().entries.map((e) {
+            final isLast = e.key == phrases.length - 1;
+            return Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2, right: 8),
+                    child: Text('•', style: TextStyle(color: Color(0xFFD779C3), fontSize: 13)),
                   ),
                   Expanded(
-                    flex: 2,
                     child: Text(
-                      r.improvement,
-                      style: GoogleFonts.roboto(
-                        fontSize: 13,
-                        color: _fbGrammarGreenText,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
+                      e.value,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12.8,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                        height: 1.33,
                       ),
                     ),
                   ),
@@ -2291,7 +2111,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildTtsCapsule(ChatMessage message) {
     final isPlaying = _speakingMessageId == message.id && _isSpeaking;
     final waveProgress = _waveProgressForMessage(message, isPlaying);
-    final est = _estimateTtsSeconds(message.text);
+    final ttsText =
+        (message.aiTtsText?.trim().isNotEmpty ?? false)
+            ? message.aiTtsText!.trim()
+            : message.text;
+    final est = _estimateTtsSeconds(ttsText);
     final elapsedSec = (_ttsElapsed.inMilliseconds / 1000).floor();
     final timeLabel = isPlaying
         ? _formatMmSs(math.min(elapsedSec, _ttsEstimatedSeconds))
@@ -2304,7 +2128,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           if (isPlaying) {
             _stopSpeaking();
           } else {
-            _speakInEnglish(message.text, messageId: message.id);
+            _speakInEnglish(ttsText, messageId: message.id);
           }
         },
         borderRadius: BorderRadius.circular(28),
@@ -2448,35 +2272,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // Add this helper method in _ChatScreenState class
-  String _cleanTextForSpeech(String text) {
-    // 1. Remove emojis (split into multiple safe character classes)
-    String cleaned = text.replaceAll(
-      RegExp(
-        r'[\u{1F300}-\u{1F9FF}]'     // Miscellaneous Symbols and Pictographs
-        r'|[\u{2600}-\u{26FF}]'      // Miscellaneous Symbols
-        r'|[\u{2700}-\u{27BF}]'      // Dingbats
-        r'|[\u{FE00}-\u{FE0F}]'      // Variation Selectors
-        r'|[\u{1F1E6}-\u{1F1FF}]',   // Regional Indicator Symbols (flags)
-        unicode: true,
-      ),
-      '',
-    );
-
-    // 2. Remove punctuation and special characters that TTS often reads aloud
-    cleaned = cleaned.replaceAll(
-      RegExp(r'[!,?.:;()\[\]{}"@#$%^&*+=~`<>]'),
-      '',
-    );
-
-        // 3. Collapse multiple whitespace (spaces, newlines, tabs) → single space
-        cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
-
-    // Optional: skip very short or empty results
-    if (cleaned.length < 5) return '';
-
-    return cleaned;
-  }
 }
 
 class _ChatTtsWaveform extends StatelessWidget {
@@ -2612,6 +2407,8 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final bool hasAudio;
+  final bool? isQuickReply;
+  final String? aiTtsText;
   /// Quick-reply chip text from socket `suggestion` (not `example`).
   final String? suggestion;
 
@@ -2625,6 +2422,8 @@ class ChatMessage {
     required this.text,
     required this.isUser,
     this.hasAudio = false,
+    this.isQuickReply = false,
+    this.aiTtsText,
     this.suggestion,
     this.audioUrl,
     String? id,

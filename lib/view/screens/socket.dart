@@ -21,8 +21,8 @@ class SocketService {
     _socketConfigured = true;
 
     socket = IO.io(
-      'ws://3.109.110.211',
-      // 'ws://192.168.1.6:9799',
+      // 'ws://3.109.110.211',
+      'ws://192.168.1.5:9799',
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableAutoConnect()
@@ -74,12 +74,16 @@ class SocketService {
     }
   }
 
-  void sendMessage(String text) {
+  void sendMessage(String text, {String? clientMessageId}) {
     if (!isConnected) {
       print('⚠️ Not connected - cannot send');
       return;
     }
-    final payload = {"message": text.trim()};
+    final payload = <String, dynamic>{"message": text.trim()};
+    final id = clientMessageId?.trim();
+    if (id != null && id.isNotEmpty) {
+      payload['clientMessageId'] = id;
+    }
     socket.emit('sendMessage', payload);
     print('📤 Sent: $payload');
   }

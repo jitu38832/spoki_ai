@@ -204,11 +204,43 @@ class AiFeedbackVocabulary {
   bool get isEmpty => suggestions.isEmpty;
 }
 
+class AiFeedbackCorrectSentence {
+  final String incorrect;
+  final String corrected;
+  final String tip;
+
+  const AiFeedbackCorrectSentence({
+    required this.incorrect,
+    required this.corrected,
+    required this.tip,
+  });
+
+  bool get isEmpty =>
+      incorrect.trim().isEmpty &&
+      corrected.trim().isEmpty &&
+      tip.trim().isEmpty;
+}
+
+class AiFeedbackImproveSentence {
+  final String sentence;
+  final String tip;
+
+  const AiFeedbackImproveSentence({
+    required this.sentence,
+    required this.tip,
+  });
+
+  bool get isEmpty => sentence.trim().isEmpty && tip.trim().isEmpty;
+}
+
 /// `type: "ai"` payload (grammar / pronunciation / vocabulary blocks).
 class AiFeedbackAiPayload {
   final AiFeedbackGrammar grammar;
   final AiFeedbackPronunciation pronunciation;
   final AiFeedbackVocabulary vocabulary;
+  final AiFeedbackCorrectSentence correctSentence;
+  final AiFeedbackImproveSentence improveSentence;
+  final List<String> moreWaysToSay;
   final String? timestamp;
 
   /// Full corrected sentence as one string (backend should place last in response / UI).
@@ -218,6 +250,9 @@ class AiFeedbackAiPayload {
     required this.grammar,
     required this.pronunciation,
     required this.vocabulary,
+    required this.correctSentence,
+    required this.improveSentence,
+    required this.moreWaysToSay,
     this.timestamp,
     this.fullCorrectedSentence,
   });
@@ -232,12 +267,44 @@ class AiFeedbackAiPayload {
     final f1 = _str(json['fullCorrectedSentence']).trim();
     final f2 = _str(json['fullSentence']).trim();
     final full = f1.isNotEmpty ? f1 : (f2.isNotEmpty ? f2 : null);
+    final grammar = AiFeedbackGrammar.fromJson(asMap(json['grammar']));
+    final pronunciation =
+        AiFeedbackPronunciation.fromJson(asMap(json['pronunciation']));
+    final vocabulary = AiFeedbackVocabulary.fromJson(asMap(json['vocabulary']));
+
+    final csMap = asMap(json['correctSentence']);
+    final csIncorrect =
+        _str(csMap?['incorrect'] ?? grammar.original).trim();
+    final csCorrected =
+        _str(csMap?['corrected'] ?? grammar.corrected).trim();
+    final csTip = _str(csMap?['tip']).trim();
+
+    final improveMap = asMap(json['improveSentence']);
+    final improveSentenceText =
+        _str(improveMap?['sentence'] ?? full ?? '').trim();
+    final improveTip = _str(improveMap?['tip']).trim();
+
+    final directMoreWays = _stringList(json['moreWaysToSay']);
+    final fallbackMoreWays = vocabulary.suggestions
+        .map((e) => e.improvement.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final moreWays = directMoreWays.isNotEmpty ? directMoreWays : fallbackMoreWays;
 
     return AiFeedbackAiPayload(
-      grammar: AiFeedbackGrammar.fromJson(asMap(json['grammar'])),
-      pronunciation:
-          AiFeedbackPronunciation.fromJson(asMap(json['pronunciation'])),
-      vocabulary: AiFeedbackVocabulary.fromJson(asMap(json['vocabulary'])),
+      grammar: grammar,
+      pronunciation: pronunciation,
+      vocabulary: vocabulary,
+      correctSentence: AiFeedbackCorrectSentence(
+        incorrect: csIncorrect,
+        corrected: csCorrected,
+        tip: csTip,
+      ),
+      improveSentence: AiFeedbackImproveSentence(
+        sentence: improveSentenceText,
+        tip: improveTip,
+      ),
+      moreWaysToSay: moreWays,
       timestamp: json['timestamp']?.toString(),
       fullCorrectedSentence: full,
     );

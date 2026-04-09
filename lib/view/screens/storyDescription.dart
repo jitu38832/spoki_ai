@@ -734,25 +734,6 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (_storyQuizPhase == _StoryQuizGenPhase.processing ||
-                            _storyQuizPhase == _StoryQuizGenPhase.pending ||
-                            _storyQuizPhase == _StoryQuizGenPhase.checking) ...[
-                          Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 4),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: LinearProgressIndicator(
-                                minHeight: 5,
-                                backgroundColor:
-                                    appColor.withValues(alpha: 0.12),
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(appColor),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
                         Align(
                           alignment: Alignment.center,
                           child: Padding(
