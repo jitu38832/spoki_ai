@@ -245,11 +245,14 @@ class _ChatlistState extends State<Chatlist> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  Column(
-                    children: const [
-                      Icon(Icons.upload, size: 40, color: Colors.blue),
-                      Text("Upload"),
-                    ],
+                  GestureDetector(
+                    onTap: pickImageFromGallery,
+                    child: Column(
+                      children: const [
+                        Icon(Icons.upload, size: 40, color: Colors.blue),
+                        Text("Upload"),
+                      ],
+                    ),
                   ),
                   const Text(
                     "OR",

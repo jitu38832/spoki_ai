@@ -416,7 +416,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           onPressed: () async {
                             PreferenceManager.clearPreferences();
-                            await FirebaseAuth.instance.signOut();
+                            // await FirebaseAuth.instance.signOut();
                             Navigator.pushAndRemoveUntil(
                               context,
                               MaterialPageRoute(
