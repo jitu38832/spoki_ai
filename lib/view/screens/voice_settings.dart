@@ -1,5 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:spokiai/core/inworld_tts_audio_mapping.dart';
+import 'package:spokiai/core/inworld_tts_voice_catalog.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import '../utils/colors.dart';
 
 class VoiceSettingsScreen extends StatefulWidget {
@@ -10,67 +17,143 @@ class VoiceSettingsScreen extends StatefulWidget {
 }
 
 class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
+  bool _tabInited = false;
   bool _isMaleTab = true;
-  double _voiceSpeed = 0.5;
-  bool _audioOn = true;
 
-  int? _selectedMaleVoice = 0;
-  int? _selectedFemaleVoice;
+  static const _previewText =
+      'Hello. This is how this voice sounds with your current settings.';
 
-  final List<_VoiceItem> _maleVoices = const [
-    _VoiceItem(name: 'David', subtitle: 'Clear & Natural'),
-    _VoiceItem(name: 'James', subtitle: 'Deep & Confident'),
-    _VoiceItem(name: 'Arjun', subtitle: 'Friendly & Casual'),
-    _VoiceItem(name: 'Matthew', subtitle: 'Soft & Clear'),
-  ];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_tabInited) {
+      _tabInited = true;
+      final female =
+          context.read<InworldTtsCubit>().state.isPartnerFemale;
+      _isMaleTab = !female;
+    }
+  }
 
-  final List<_VoiceItem> _femaleVoices = const [
-    _VoiceItem(name: 'Emma', subtitle: 'Soft & Clear'),
-    _VoiceItem(name: 'Olivia', subtitle: 'Professional'),
-    _VoiceItem(name: 'Sophia', subtitle: 'Energetic & Fast'),
-    _VoiceItem(name: 'Sofia', subtitle: 'Bright & Friendly'),
-  ];
+  int _indexForVoice(List<InworldTtsVoiceEntry> list, String voiceId) {
+    final i = list.indexWhere((e) => e.voiceId == voiceId);
+    return i >= 0 ? i : 0;
+  }
+
+  Future<void> _preview(InworldTtsVoiceEntry entry) async {
+    final cubit = context.read<InworldTtsCubit>();
+    if (!cubit.state.audioEnabled) return;
+    await cubit.speak(
+      _previewText,
+      playbackId: '__voice_preview__',
+      voiceIdForPreview: entry.voiceId,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final voices = _isMaleTab ? _maleVoices : _femaleVoices;
-    final selectedIndex = _isMaleTab ? _selectedMaleVoice : _selectedFemaleVoice;
-
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(
-          "Voice Settings",
-          style: GoogleFonts.inter(fontSize: 32, fontWeight: FontWeight.w700),
+          'Voice Settings',
+          style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700),
         ),
         centerTitle: true,
         elevation: 0.8,
+        toolbarHeight: 48,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("Voice",
-                  style: GoogleFonts.inter(fontSize: 44, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 10),
-              _buildGenderTabs(),
-              const SizedBox(height: 12),
-              _buildVoicesCard(voices, selectedIndex),
-              const SizedBox(height: 16),
-              _buildSpeedCard(),
-              const SizedBox(height: 18),
-              Text("Audio Mode",
-                  style: GoogleFonts.inter(fontSize: 38, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 10),
-              _buildAudioModeSwitch(),
-              const Spacer(),
-              _buildContinueButton(),
-            ],
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: BlocConsumer<InworldTtsCubit, InworldTtsState>(
+                listenWhen: (a, b) =>
+                    b.status == InworldTtsStatus.error &&
+                    (b.errorMessage?.isNotEmpty ?? false) &&
+                    a.errorMessage != b.errorMessage,
+                listener: (context, state) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(state.errorMessage!)),
+                  );
+                },
+                builder: (context, state) {
+                  final maleList = kInworldMaleVoices;
+                  final femaleList = kInworldFemaleVoices;
+                  final voices = _isMaleTab ? maleList : femaleList;
+                  final selectedVoiceId =
+                      _isMaleTab ? state.maleVoiceId : state.femaleVoiceId;
+                  final selectedIndex = _indexForVoice(voices, selectedVoiceId);
+
+                  final speedLabel = speedBandLabel(state.speedSlider);
+                  final tempLabel = temperatureBandLabel(state.temperatureSlider);
+
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Voice',
+                          style: GoogleFonts.inter(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _buildGenderTabs(),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: _buildVoicesCard(
+                            voices: voices,
+                            selectedIndex: selectedIndex,
+                            state: state,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildRangedSliderCard(
+                          title: 'Voice Speed',
+                          value: state.speedSlider,
+                          bandLabel: speedLabel,
+                          onChanged: (v) => unawaited(
+                            context.read<InworldTtsCubit>().setSpeedSlider(v),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _buildRangedSliderCard(
+                          title: 'Voice Temperature',
+                          value: state.temperatureSlider,
+                          bandLabel: tempLabel,
+                          onChanged: (v) => unawaited(
+                            context
+                                .read<InworldTtsCubit>()
+                                .setTemperatureSlider(v),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Audio Mode',
+                          style: GoogleFonts.inter(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _buildAudioModeSwitch(state.audioEnabled),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+              child: _buildContinueButton(),
+            ),
+          ],
         ),
       ),
     );
@@ -81,16 +164,16 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       children: [
         Expanded(
           child: _tabButton(
-            label: "Male",
+            label: 'Male',
             selected: _isMaleTab,
             selectedColors: const [Color(0xFF2CE31D), Color(0xFF21C10D)],
             onTap: () => setState(() => _isMaleTab = true),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         Expanded(
           child: _tabButton(
-            label: "Female",
+            label: 'Female',
             selected: !_isMaleTab,
             selectedColors: const [Color(0xFF1F88CC), Color(0xFF2F6EE6)],
             onTap: () => setState(() => _isMaleTab = false),
@@ -108,12 +191,12 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 11),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           gradient: selected
               ? LinearGradient(colors: selectedColors)
               : null,
@@ -124,7 +207,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
           child: Text(
             label,
             style: GoogleFonts.inter(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w700,
               color: selected ? Colors.black : Colors.grey[600],
             ),
@@ -134,9 +217,13 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     );
   }
 
-  Widget _buildVoicesCard(List<_VoiceItem> voices, int? selectedIndex) {
+  Widget _buildVoicesCard({
+    required List<InworldTtsVoiceEntry> voices,
+    required int selectedIndex,
+    required InworldTtsState state,
+  }) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
         color: const Color(0xFFF7F2FF),
         borderRadius: BorderRadius.circular(12),
@@ -145,125 +232,161 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _isMaleTab ? "Male Voices" : "Female Voices",
+            _isMaleTab ? 'Male Voices' : 'Female Voices',
             style: GoogleFonts.inter(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: Colors.black54,
             ),
           ),
-          const SizedBox(height: 8),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: voices.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 2.6,
+          const SizedBox(height: 6),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 6.0;
+                final maxW = constraints.maxWidth;
+                final maxH = constraints.maxHeight;
+                final cellW = (maxW - spacing) / 2;
+                final cellH = (maxH - spacing) / 2;
+                final aspect =
+                    (cellW / cellH.clamp(1.0, 999.0)).clamp(1.4, 4.2);
+                return GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: spacing,
+                    mainAxisSpacing: spacing,
+                    childAspectRatio: aspect,
+                  ),
+                  itemCount: voices.length,
+                  itemBuilder: (context, index) {
+                    final voice = voices[index];
+                    final selected = selectedIndex == index;
+                    final subtitle = voice.subtitle.isNotEmpty
+                        ? voice.subtitle
+                        : voice.displayName;
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () {
+                          final cubit = context.read<InworldTtsCubit>();
+                          if (_isMaleTab) {
+                            unawaited(cubit.setMaleVoice(voice.voiceId));
+                          } else {
+                            unawaited(cubit.setFemaleVoice(voice.voiceId));
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: selected
+                                  ? appColor
+                                  : const Color(0xFFE2E2E2),
+                              width: selected ? 1.6 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 12,
+                                backgroundColor: _isMaleTab
+                                    ? const Color(0xFFE1EEFF)
+                                    : const Color(0xFFFFE9F4),
+                                child: Icon(
+                                  _isMaleTab ? Icons.man : Icons.woman,
+                                  size: 14,
+                                  color:
+                                      _isMaleTab ? Colors.blue : Colors.pink,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      voice.displayName,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.15,
+                                      ),
+                                    ),
+                                    Text(
+                                      subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9.5,
+                                        color: Colors.black45,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 28,
+                                  minHeight: 28,
+                                ),
+                                icon: Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  color: selected
+                                      ? appColor
+                                      : Colors.blue[300],
+                                  size: 20,
+                                ),
+                                onPressed: state.audioEnabled
+                                    ? () => _preview(voice)
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
-            itemBuilder: (context, index) {
-              final voice = voices[index];
-              final selected = selectedIndex == index;
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (_isMaleTab) {
-                      _selectedMaleVoice = index;
-                    } else {
-                      _selectedFemaleVoice = index;
-                    }
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: selected ? appColor : const Color(0xFFE2E2E2),
-                      width: selected ? 1.6 : 1.0,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: _isMaleTab
-                            ? const Color(0xFFE1EEFF)
-                            : const Color(0xFFFFE9F4),
-                        child: Icon(
-                          _isMaleTab ? Icons.man : Icons.woman,
-                          size: 16,
-                          color: _isMaleTab ? Colors.blue : Colors.pink,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              voice.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              voice.subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                fontSize: 10.5,
-                                color: Colors.black45,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.play_circle_fill_rounded,
-                        color: selected ? appColor : Colors.blue[300],
-                        size: 20,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSpeedCard() {
-    final speedLabel = _voiceSpeed < 0.34
-        ? "Slow"
-        : _voiceSpeed < 0.67
-            ? "Normal"
-            : "Fast";
-
+  Widget _buildRangedSliderCard({
+    required String title,
+    required double value,
+    required String bandLabel,
+    required ValueChanged<double> onChanged,
+  }) {
+    final v = value.clamp(0.0, 1.5);
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       decoration: BoxDecoration(
         color: const Color(0xFFF7F2FF),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            "Voice Speed",
+            title,
             style: GoogleFonts.inter(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: Colors.black54,
             ),
@@ -273,21 +396,47 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
               activeTrackColor: appColor,
               inactiveTrackColor: Colors.grey[300],
               thumbColor: appColor,
-              trackHeight: 4,
+              trackHeight: 3,
+              overlayShape: SliderComponentShape.noOverlay,
             ),
             child: Slider(
-              value: _voiceSpeed,
-              onChanged: (v) => setState(() => _voiceSpeed = v),
+              min: 0,
+              max: 1.5,
+              divisions: 15,
+              label: v.toStringAsFixed(1),
+              value: v,
+              onChanged: onChanged,
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Slow", style: GoogleFonts.inter(fontSize: 11, color: Colors.black54)),
-                Text("Normal", style: GoogleFonts.inter(fontSize: 11, color: Colors.black54)),
-                Text("Fast", style: GoogleFonts.inter(fontSize: 11, color: Colors.black54)),
+                Text(
+                  'Slow (0)',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    color: Colors.black45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'Normal (1)',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    color: Colors.black45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'Fast (1.5)',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    color: Colors.black45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -295,8 +444,11 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
           Align(
             alignment: Alignment.center,
             child: Text(
-              speedLabel,
-              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+              '${v.toStringAsFixed(1)} · $bandLabel',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -304,22 +456,26 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     );
   }
 
-  Widget _buildAudioModeSwitch() {
+  Widget _buildAudioModeSwitch(bool audioOn) {
     return Row(
       children: [
         Expanded(
           child: _modeButton(
-            label: "On",
-            selected: _audioOn,
-            onTap: () => setState(() => _audioOn = true),
+            label: 'On',
+            selected: audioOn,
+            onTap: () => unawaited(
+                  context.read<InworldTtsCubit>().setAudioEnabled(true),
+                ),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         Expanded(
           child: _modeButton(
-            label: "Off",
-            selected: !_audioOn,
-            onTap: () => setState(() => _audioOn = false),
+            label: 'Off',
+            selected: !audioOn,
+            onTap: () => unawaited(
+                  context.read<InworldTtsCubit>().setAudioEnabled(false),
+                ),
           ),
         ),
       ],
@@ -331,19 +487,41 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: selected ? const Color(0xFFD5CED0) : const Color(0xFFE8E1E3),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? appColor : const Color(0xFFC5C5C5),
+              width: selected ? 2.5 : 1,
+            ),
+            color: selected
+                ? appColor.withValues(alpha: 0.22)
+                : const Color(0xFFF2F2F2),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: appColor.withValues(alpha: 0.25),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: selected ? const Color(0xFF1A237E) : Colors.black54,
+              ),
+            ),
           ),
         ),
       ),
@@ -355,29 +533,29 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       width: double.infinity,
       child: InkWell(
         onTap: () => Navigator.pop(context),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Ink(
-          padding: const EdgeInsets.symmetric(vertical: 13),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             gradient: const LinearGradient(
               colors: [Color(0xFF5844E5), Color(0xFF2E9CF8)],
             ),
             boxShadow: [
               BoxShadow(
-                color: appColor.withValues(alpha: 0.30),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
+                color: appColor.withValues(alpha: 0.28),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               )
             ],
           ),
           child: Center(
             child: Text(
-              "Continue  \u2192",
+              'Continue  \u2192',
               style: GoogleFonts.inter(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
-                fontSize: 16,
+                fontSize: 15,
               ),
             ),
           ),
@@ -385,11 +563,4 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       ),
     );
   }
-}
-
-class _VoiceItem {
-  final String name;
-  final String subtitle;
-
-  const _VoiceItem({required this.name, required this.subtitle});
 }

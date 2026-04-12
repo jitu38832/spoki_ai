@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
@@ -12,6 +13,8 @@ import 'package:socket_io_client/socket_io_client.dart';
 import 'package:spokiai/model/aifeedback.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/socket.dart'; // Adjust path if needed
+import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:spokiai/view/screens/voice_settings.dart';
 import 'package:spokiai/view/services/chat_voice_upload_service.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
@@ -91,6 +94,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final Set<String> _aiFeedbackLoadingIds = {};
   final Set<String> _pendingQuickReplyMessageIds = {};
 
+  InworldTtsCubit? _inworldTts;
+
+  String? _ttsTextForMessageId(String id) {
+    for (final m in _messages) {
+      if (m.id == id) {
+        final ai = m.aiTtsText?.trim();
+        if (ai != null && ai.isNotEmpty) return ai;
+        return m.text.trim();
+      }
+    }
+    return null;
+  }
+
   String _getLocaleFromPartnerLanguage(String partnerLang) {
     String lower = partnerLang.toLowerCase().trim();
     switch (lower) {
@@ -151,6 +167,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return;
     }
 
+    final cubit = context.read<InworldTtsCubit>();
+    final ttsOn = cubit.state.audioEnabled;
+    String? addedAiTtsText;
+    String? addedAiMsgId;
+
     setState(() {
       if (type == 'user') {
         final id = clientId ?? _newChatMessageId();
@@ -166,6 +187,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       } else if (type == 'ai') {
         final msgId = _newChatMessageId();
         final ttsPlaybackText = aiTtsText ?? messageText;
+        addedAiTtsText = ttsPlaybackText;
+        addedAiMsgId = msgId;
         _messages.add(ChatMessage(
           text: messageText,
           isUser: false,
@@ -174,16 +197,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           aiTtsText: aiTtsText,
           id: msgId,
         ));
-        if (!_isFirstAiMessageReceived) {
-          _isFirstAiMessageReceived = true;
-          Future.microtask(() {
-            if (mounted) _speakInEnglish(ttsPlaybackText, messageId: msgId);
-          });
-        } else {
-          _speakInEnglish(ttsPlaybackText, messageId: msgId);
-        }
       }
     });
+
+    if (type == 'ai' && ttsOn && addedAiMsgId != null && addedAiTtsText != null) {
+      final text = addedAiTtsText!;
+      final msgId = addedAiMsgId!;
+      if (!_isFirstAiMessageReceived) {
+        _isFirstAiMessageReceived = true;
+        Future.microtask(() {
+          if (mounted) _speakInEnglish(text, messageId: msgId);
+        });
+      } else {
+        _speakInEnglish(text, messageId: msgId);
+      }
+    }
 
     _scrollToBottom();
   }
@@ -306,7 +334,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _textController.addListener(_onInputTextChanged);
 
     // New chat session (incl. new partner after leaving chat): always handshake again.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (mounted) {
+        _inworldTts = context.read<InworldTtsCubit>();
+        final cubit = _inworldTts!;
+        await cubit.loadPreferences();
+        final g =
+            widget.partnerDetails['gender']?.toString().trim() ?? 'Female';
+        await cubit.setPartnerGender(g);
+      }
+
       socketService.resetInitialFlag();
 
       // Already connected → send immediately
@@ -1009,6 +1046,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _speakInEnglish(String text, {String? messageId}) async {
     if (text.trim().isEmpty || !mounted) return;
 
+    final cubitCheck = _inworldTts ?? context.read<InworldTtsCubit>();
+    if (!cubitCheck.state.audioEnabled) return;
+
     await _stopVoicePlayback();
     await _flutterTts.stop();
 
@@ -1025,24 +1065,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _startTtsElapsedTicker();
     _syncWaveAnimation();
 
-    await _flutterTts.setLanguage("en-US");
-
-    final voices = await _flutterTts.getVoices;
-    if (voices.isNotEmpty) {
-      for (var voice in voices) {
-        if (voice is Map &&
-            voice["locale"] != null &&
-            voice["locale"].toString().startsWith("en")) {
-          await _flutterTts.setVoice({
-            "name": (voice["name"] ?? "").toString(),
-            "locale": voice["locale"].toString(),
-          });
-          break;
-        }
-      }
-    }
-
-    await _flutterTts.speak(trimmed);
+    if (!mounted) return;
+    final cubit = _inworldTts ?? context.read<InworldTtsCubit>();
+    await cubit.speak(trimmed, playbackId: messageId);
   }
 
   Future<void> _stopSpeaking() async {
@@ -1053,7 +1078,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       final p = (_ttsElapsed.inMilliseconds / denom).clamp(0.0, 1.0);
       _ttsWaveProgressByMessageId[id] = p;
     }
-    await _flutterTts.stop();
+    final cubit = _inworldTts ?? context.read<InworldTtsCubit>();
+    await cubit.stop();
     if (mounted) {
       _stopTtsElapsedTicker();
       _waveController.stop();
@@ -1117,6 +1143,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     socketService.socket.off('aifeedback', _onAiFeedbackSocket);
     socketService.socket.off('typing', _onTypingSocket);
     _flutterTts.stop();
+    unawaited(_inworldTts?.stop() ?? Future.value());
     _pronStopTimer?.cancel();
     unawaited(_chatVoicePlayer.stop());
     unawaited(_voiceRecorder.dispose());
@@ -1141,7 +1168,54 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         if (didPop) return;
         _goToDashboard();
       },
-      child: Scaffold(
+      child: BlocListener<InworldTtsCubit, InworldTtsState>(
+        listenWhen: (prev, curr) =>
+            prev.status != curr.status ||
+            prev.playbackId != curr.playbackId ||
+            prev.errorMessage != curr.errorMessage ||
+            prev.audioEnabled != curr.audioEnabled,
+        listener: (context, state) {
+          if (!state.audioEnabled) {
+            unawaited(_stopSpeaking());
+          }
+          if (state.status == InworldTtsStatus.error &&
+              (state.errorMessage?.isNotEmpty ?? false)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.errorMessage!)),
+            );
+          }
+
+          final pid = state.playbackId;
+          final isStory = pid == 'story';
+
+          if (state.status == InworldTtsStatus.loading ||
+              state.status == InworldTtsStatus.playing) {
+            if (pid != null && !isStory) {
+              final t = _ttsTextForMessageId(pid) ?? '';
+              setState(() {
+                _isSpeaking = true;
+                _speakingMessageId = pid;
+                _ttsEstimatedSeconds = _estimateTtsSeconds(t);
+              });
+              _startTtsElapsedTicker();
+              _syncWaveAnimation();
+            }
+            return;
+          }
+
+          if (state.status == InworldTtsStatus.idle ||
+              state.status == InworldTtsStatus.error) {
+            if (!isStory || pid == null) {
+              setState(() {
+                _isSpeaking = false;
+                _speakingMessageId = null;
+              });
+              _stopTtsElapsedTicker();
+              _waveController.stop();
+            }
+          }
+        },
+        child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         leadingWidth: 42,
@@ -1216,7 +1290,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 28),
+            tooltip: 'Voice & TTS settings',
+            icon: const Icon(Icons.record_voice_over_outlined, size: 26),
             onPressed: () {
               Navigator.push(
                 context,
@@ -1488,6 +1563,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ],
       ),
     ),
+      ),
     );
   }
 
@@ -1538,44 +1614,47 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            Row(
-              mainAxisAlignment:
-                  isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-              children: [
-                if (!isUser)
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundColor: appColor,
-                    backgroundImage: partnerPhoto != null
-                        ? (partnerPhoto.startsWith("assets/")
-                            ? AssetImage(partnerPhoto) as ImageProvider
-                            : FileImage(File(partnerPhoto)))
-                        : null,
-                    child: partnerPhoto == null
-                        ? Icon(
-                            widget.partnerDetails["gender"]
-                                        ?.toString()
-                                        .toLowerCase() ==
-                                    "female"
-                                ? Icons.woman
-                                : Icons.man,
-                            color: Colors.white,
-                            size: 18,
-                          )
-                        : null,
-                  ),
-                if (!isUser) const SizedBox(width: 8),
-                Expanded(child: _buildTtsCapsule(message)),
-                if (isUser) const SizedBox(width: 8),
-                if (isUser)
-                  const CircleAvatar(
-                    radius: 14,
-                    backgroundColor: Color(0xFFE3F2FD),
-                    child: Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18),
-                  ),
-              ],
+            BlocBuilder<InworldTtsCubit, InworldTtsState>(
+              buildWhen: (a, b) => a.audioEnabled != b.audioEnabled,
+              builder: (context, tts) {
+                if (!tts.audioEnabled) return const SizedBox.shrink();
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: appColor,
+                          backgroundImage: partnerPhoto != null
+                              ? (partnerPhoto.startsWith("assets/")
+                                  ? AssetImage(partnerPhoto) as ImageProvider
+                                  : FileImage(File(partnerPhoto)))
+                              : null,
+                          child: partnerPhoto == null
+                              ? Icon(
+                                  widget.partnerDetails["gender"]
+                                              ?.toString()
+                                              .toLowerCase() ==
+                                          "female"
+                                      ? Icons.woman
+                                      : Icons.man,
+                                  color: Colors.white,
+                                  size: 18,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: _buildTtsCapsule(message)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                );
+              },
             ),
-            const SizedBox(height: 6),
           ] else if (message.isVoiceMessage) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -1882,6 +1961,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildCorrectSentenceCard(AiFeedbackCorrectSentence sentence) {
+    String normSentence(String s) =>
+        s.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
+    final inc = sentence.incorrect.trim();
+    final corr = sentence.corrected.trim();
+    final wrongSameAsRight =
+        inc.isNotEmpty && corr.isNotEmpty && normSentence(inc) == normSentence(corr);
+    final showWrongLine = inc.isNotEmpty && !wrongSameAsRight;
+
     return _buildFeedbackSectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1894,77 +1981,77 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             textColor: const Color(0xFFD4FFE8),
           ),
           const SizedBox(height: 10),
-        if (sentence.incorrect.isNotEmpty)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE15B64),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.close_rounded, size: 15, color: Colors.white),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: _fbRowBg,
-                    borderRadius: BorderRadius.circular(10),
+          if (showWrongLine)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE15B64),
+                    shape: BoxShape.circle,
                   ),
-                  child: Text(
-                    sentence.incorrect,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12.8,
-                      height: 1.35,
-                      color: const Color(0xFFFF8E8E),
-                      fontWeight: FontWeight.w500,
+                  child: const Icon(Icons.close_rounded, size: 15, color: Colors.white),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: _fbRowBg,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      sentence.incorrect,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12.8,
+                        height: 1.35,
+                        color: const Color(0xFFFF8E8E),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          if (sentence.incorrect.isNotEmpty && sentence.corrected.isNotEmpty) const SizedBox(height: 8),
-        if (sentence.corrected.isNotEmpty)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF50B67C),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.check_rounded, size: 15, color: Colors.white),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: _fbGrammarGreen,
-                    borderRadius: BorderRadius.circular(10),
+              ],
+            ),
+          if (showWrongLine && sentence.corrected.isNotEmpty) const SizedBox(height: 8),
+          if (sentence.corrected.isNotEmpty)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF50B67C),
+                    shape: BoxShape.circle,
                   ),
-                  child: Text(
-                    sentence.corrected,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12.8,
-                      height: 1.35,
-                      color: _fbGrammarGreenText,
-                      fontWeight: FontWeight.w500,
+                  child: const Icon(Icons.check_rounded, size: 15, color: Colors.white),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: _fbGrammarGreen,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      sentence.corrected,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12.8,
+                        height: 1.35,
+                        color: _fbGrammarGreenText,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           if (sentence.tip.isNotEmpty) ...[
             const SizedBox(height: 8),
             Row(
@@ -1980,7 +2067,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     style: GoogleFonts.poppins(
                       fontSize: 12.2,
                       height: 1.35,
-                    color: const Color(0xFFE6E7EF),
+                      color: const Color(0xFFE6E7EF),
                     ),
                   ),
                 ),
@@ -2109,91 +2196,116 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildTtsCapsule(ChatMessage message) {
-    final isPlaying = _speakingMessageId == message.id && _isSpeaking;
-    final waveProgress = _waveProgressForMessage(message, isPlaying);
-    final ttsText =
-        (message.aiTtsText?.trim().isNotEmpty ?? false)
-            ? message.aiTtsText!.trim()
-            : message.text;
-    final est = _estimateTtsSeconds(ttsText);
-    final elapsedSec = (_ttsElapsed.inMilliseconds / 1000).floor();
-    final timeLabel = isPlaying
-        ? _formatMmSs(math.min(elapsedSec, _ttsEstimatedSeconds))
-        : _formatMmSs(est);
+    return BlocBuilder<InworldTtsCubit, InworldTtsState>(
+      buildWhen: (a, b) =>
+          a.status != b.status ||
+          a.playbackId != b.playbackId ||
+          a.audioEnabled != b.audioEnabled,
+      builder: (context, tts) {
+        if (!tts.audioEnabled) return const SizedBox.shrink();
+        final isLoading = tts.isLoadingFor(message.id);
+        final isPlayingCubit = tts.isPlayingFor(message.id);
+        final isPlaying =
+            isPlayingCubit || (_speakingMessageId == message.id && _isSpeaking);
+        final waveActive = isPlaying || isLoading;
+        final waveProgress = _waveProgressForMessage(message, isPlaying);
+        final ttsText =
+            (message.aiTtsText?.trim().isNotEmpty ?? false)
+                ? message.aiTtsText!.trim()
+                : message.text;
+        final est = _estimateTtsSeconds(ttsText);
+        final elapsedSec = (_ttsElapsed.inMilliseconds / 1000).floor();
+        final timeLabel = isPlaying
+            ? _formatMmSs(math.min(elapsedSec, _ttsEstimatedSeconds))
+            : _formatMmSs(est);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          if (isPlaying) {
-            _stopSpeaking();
-          } else {
-            _speakInEnglish(ttsText, messageId: message.id);
-          }
-        },
-        borderRadius: BorderRadius.circular(28),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: _ttsCapsuleBg,
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: isLoading
+                ? null
+                : () {
+                    if (isPlaying) {
+                      _stopSpeaking();
+                    } else {
+                      _speakInEnglish(ttsText, messageId: message.id);
+                    }
+                  },
             borderRadius: BorderRadius.circular(28),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(5, 5, 11, 5),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [_ttsPlayGradientA, _ttsPlayGradientB],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _ttsPlayGradientB.withValues(alpha: 0.32),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+            child: Ink(
+              decoration: BoxDecoration(
+                color: _ttsCapsuleBg,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(5, 5, 11, 5),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [_ttsPlayGradientA, _ttsPlayGradientB],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _ttsPlayGradientB.withValues(alpha: 0.32),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Icon(
-                    isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: SizedBox(
-                    height: 26,
-                    child: _ChatTtsWaveform(
-                      seed: message.id.hashCode,
-                      isAnimating: isPlaying,
-                      listenable: _waveController,
-                      playedProgress: waveProgress,
-                      playedColor: _ttsWaveColor,
-                      unplayedColor: _ttsWaveUnplayed,
+                      child: isLoading
+                          ? const Padding(
+                              padding: EdgeInsets.all(10),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              isPlaying
+                                  ? Icons.stop_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 26,
+                        child: _ChatTtsWaveform(
+                          seed: message.id.hashCode,
+                          isAnimating: waveActive,
+                          listenable: _waveController,
+                          playedProgress: waveProgress,
+                          playedColor: _ttsWaveColor,
+                          unplayedColor: _ttsWaveUnplayed,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      timeLabel,
+                      style: GoogleFonts.roboto(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  timeLabel,
-                  style: GoogleFonts.roboto(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/view/screens/chat.dart';
 import '../utils/colors.dart';
 import '../utils/custom_navigator.dart';
@@ -79,7 +81,7 @@ class _ChatlistState extends State<Chatlist> {
     return raw.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
-  void _onContinue() {
+  Future<void> _onContinue() async {
     if (nameController.text.trim().isEmpty) {
       showToast(context: context, message: "Please enter name");
       return;
@@ -88,6 +90,8 @@ class _ChatlistState extends State<Chatlist> {
       showToast(context: context, message: "Please select or upload a photo");
       return;
     }
+
+    await context.read<InworldTtsCubit>().setPartnerGender(_selectedGender);
 
     final partnerDetails = <String, dynamic>{
       "name": nameController.text.trim(),

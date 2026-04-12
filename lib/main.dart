@@ -7,6 +7,11 @@ import 'package:spokiai/view/screens/splashscreen.dart';
 import 'package:spokiai/view/screens/story_quiz_screen.dart';
 import 'package:spokiai/view/utils/firebase_options.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/data/local/inworld_tts_preferences.dart';
+import 'package:spokiai/data/repositories/inworld_tts_repository_impl.dart';
+import 'package:spokiai/data/sources/inworld_tts_remote_data_source.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
+import 'package:spokiai/core/config/inworld_tts_config.dart';
 import 'package:spokiai/viewmodel/cubit/appcubit.dart';
 import 'package:spokiai/viewmodel/repository/app_repository.dart';
 
@@ -15,6 +20,7 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await InworldTtsConfig.loadSecrets();
   await PreferenceManager.init();
 
   SystemChrome.setPreferredOrientations([
@@ -48,9 +54,18 @@ class InitApp extends StatelessWidget {
 
         final repository = AppRepository();
 
+        final inworldRepository = InworldTtsRepositoryImpl(
+          remoteDataSource: InworldTtsRemoteDataSourceImpl(),
+          preferences: InworldTtsPreferencesImpl(),
+        );
+
         return MultiBlocProvider(
           providers: [
             BlocProvider(create: (context) => AppCubit(repository)),
+            BlocProvider(
+              create: (context) => InworldTtsCubit(inworldRepository)
+                ..loadPreferences(),
+            ),
           ],
           child: MaterialApp(
             navigatorKey: navigatorKey,

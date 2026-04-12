@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spokiai/model/generatestory.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
@@ -58,7 +60,6 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   double volume = 1.0;
   double pitch = 1.0;
   double rate = 0.5;
-  bool isSpeaking = false;
   Map<String, String> availableLanguages = {};
   String? selectedLanguageCode;
 
@@ -265,11 +266,10 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     await flutterTts.setPitch(pitch);
 
     // Callbacks
-    flutterTts.setStartHandler(() => setState(() => isSpeaking = true));
-    flutterTts.setCompletionHandler(() => setState(() => isSpeaking = false));
-    flutterTts.setCancelHandler(() => setState(() => isSpeaking = false));
+    flutterTts.setStartHandler(() {});
+    flutterTts.setCompletionHandler(() {});
+    flutterTts.setCancelHandler(() {});
     flutterTts.setErrorHandler((msg) {
-      setState(() => isSpeaking = false);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Error: $msg")));
@@ -343,21 +343,15 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   }
 
   Future<void> speak() async {
-    if (widget.generateStoryResponse.data!.story.toString().isEmpty) return;
-
-    await flutterTts.setVolume(volume);
-    await flutterTts.setSpeechRate(rate);
-    await flutterTts.setPitch(pitch);
-    await flutterTts.setLanguage(selectedLanguageCode ?? "en-US");
-
-    int result = await flutterTts
-        .speak(widget.generateStoryResponse.data!.story.toString());
-    if (result == 1) setState(() => isSpeaking = true);
+    final story = widget.generateStoryResponse.data?.story.toString() ?? '';
+    if (story.isEmpty || !mounted) return;
+    final cubit = context.read<InworldTtsCubit>();
+    if (!cubit.state.audioEnabled) return;
+    await cubit.speak(story, playbackId: 'story');
   }
 
   Future<void> stop() async {
-    int result = await flutterTts.stop();
-    if (result == 1) setState(() => isSpeaking = false);
+    await context.read<InworldTtsCubit>().stop();
   }
 
 
@@ -638,16 +632,32 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             ),
                             Row(
                               children: [
-                                IconButton(
-                                  icon: Icon(!isSpeaking
-                                      ? Icons.volume_up_outlined
-                                      : Icons.stop),
-                                  onPressed: () {
-                                    if (isSpeaking) {
-                                      stop(); // call stop
-                                    } else {
-                                      speak(); // call speak
+                                BlocBuilder<InworldTtsCubit, InworldTtsState>(
+                                  buildWhen: (a, b) =>
+                                      a.status != b.status ||
+                                      a.playbackId != b.playbackId ||
+                                      a.audioEnabled != b.audioEnabled,
+                                  builder: (context, tts) {
+                                    if (!tts.audioEnabled) {
+                                      return const SizedBox.shrink();
                                     }
+                                    final storyActive = tts.playbackId == 'story' &&
+                                        (tts.status == InworldTtsStatus.loading ||
+                                            tts.status == InworldTtsStatus.playing);
+                                    return IconButton(
+                                      icon: Icon(
+                                        storyActive
+                                            ? Icons.stop
+                                            : Icons.volume_up_outlined,
+                                      ),
+                                      onPressed: () {
+                                        if (storyActive) {
+                                          stop();
+                                        } else {
+                                          speak();
+                                        }
+                                      },
+                                    );
                                   },
                                 ),
                                 IconButton(
