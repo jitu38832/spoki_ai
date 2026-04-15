@@ -26,7 +26,8 @@ class VoiceSettingsScreen extends StatefulWidget {
 class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   static const String _previewPlaybackId = '__voice_preview__';
   static const String _storySofyLocalVoiceId = '__sofy_local_tts__';
-  static const String _selectedVoicePrefKey = 'voice_settings_selected_voice_id';
+  static const String _selectedVoicePrefKey =
+      'voice_settings_selected_voice_id';
   static const InworldTtsVoiceEntry _storySofyEntry = InworldTtsVoiceEntry(
     voiceId: _storySofyLocalVoiceId,
     displayName: 'Sofy',
@@ -71,7 +72,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     final cubit = context.read<InworldTtsCubit>();
     unawaited(cubit.setSpeedSlider(1.0));
     unawaited(cubit.setTemperatureSlider(1.0));
-    final saved = PreferenceManager.getStringValue(key: _selectedVoicePrefKey)?.trim();
+    final saved =
+        PreferenceManager.getStringValue(key: _selectedVoicePrefKey)?.trim();
     if (saved != null && saved.isNotEmpty) {
       _singleSelectedVoiceId = saved;
       _isSofySelected = saved == _storySofyLocalVoiceId;
@@ -84,6 +86,20 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       if (_singleSelectedVoiceId == null || _singleSelectedVoiceId!.isEmpty) {
         _isSofySelected = true;
         _singleSelectedVoiceId = _storySofyLocalVoiceId;
+      }
+    }
+
+    // Chat screen: enforce gender-consistent default voice selection.
+    if (!widget.fromStory) {
+      final isFemale = cubit.state.isPartnerFemale;
+      final selected = _singleSelectedVoiceId?.trim();
+      final validForGender = selected != null &&
+          selected.isNotEmpty &&
+          ((isFemale && isFemaleInworldVoiceId(selected)) ||
+              (!isFemale && isMaleInworldVoiceId(selected)));
+      if (!validForGender) {
+        _singleSelectedVoiceId =
+            isFemale ? defaultInworldFemaleVoiceId : defaultInworldMaleVoiceId;
       }
     }
   }
@@ -240,9 +256,20 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     final pinned = _singleSelectedVoiceId?.trim();
     if (pinned != null && pinned.isNotEmpty) {
       if (pinned == _storySofyLocalVoiceId) {
-        return widget.fromStory ? pinned : (state.isPartnerFemale ? selectedFemale : selectedMale);
+        return widget.fromStory
+            ? pinned
+            : (state.isPartnerFemale ? selectedFemale : selectedMale);
       }
-      if (isKnownInworldVoiceId(pinned)) return pinned;
+      if (widget.fromStory) {
+        if (isKnownInworldVoiceId(pinned)) return pinned;
+      } else {
+        if (state.isPartnerFemale && isFemaleInworldVoiceId(pinned)) {
+          return pinned;
+        }
+        if (!state.isPartnerFemale && isMaleInworldVoiceId(pinned)) {
+          return pinned;
+        }
+      }
     }
     return state.isPartnerFemale ? selectedFemale : selectedMale;
   }
@@ -266,8 +293,10 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
     if (isMaleInworldVoiceId(voiceId)) {
       await cubit.setMaleVoice(voiceId);
+      await cubit.setPartnerGender('Male');
     } else if (isFemaleInworldVoiceId(voiceId)) {
       await cubit.setFemaleVoice(voiceId);
+      await cubit.setPartnerGender('Female');
     }
     PreferenceManager.insertValue(key: _selectedVoicePrefKey, value: voiceId);
 
@@ -654,22 +683,34 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       builder: (context, constraints) {
         final activeSelectedVoiceId =
             _resolveActiveSelectedVoiceId(state, selectedMale, selectedFemale);
+        final showOnlyGenderVoices = !widget.fromStory;
+        final activeGenderVoices =
+            state.isPartnerFemale ? kInworldFemaleVoices : kInworldMaleVoices;
+        final activeGenderTitle =
+            state.isPartnerFemale ? 'Female Voices' : 'Male Voices';
         final extraStoryCards = widget.fromStory ? 1 : 0;
-        final totalCards =
-            kInworldMaleVoices.length + kInworldFemaleVoices.length + extraStoryCards;
-        final sectionCount = widget.fromStory ? 3 : 2;
+        final totalCards = widget.fromStory
+            ? (kInworldMaleVoices.length +
+                kInworldFemaleVoices.length +
+                extraStoryCards)
+            : activeGenderVoices.length;
+        final sectionCount = widget.fromStory ? 3 : 1;
         final sectionGap = widget.fromStory ? 1.0 : 2.0;
         const headingAndGapPerSection = 20.0;
         final cardGapCompact = widget.fromStory ? 1.0 : 2.0;
 
-        final totalCardGaps =
-            (kInworldMaleVoices.length - 1 + kInworldFemaleVoices.length - 1) *
-                cardGapCompact;
-        final fixedHeight =
-            (sectionGap * (sectionCount - 1)) +
+        final totalCardGaps = widget.fromStory
+            ? (kInworldMaleVoices.length -
+                    1 +
+                    kInworldFemaleVoices.length -
+                    1) *
+                cardGapCompact
+            : (activeGenderVoices.length - 1) * cardGapCompact;
+        final fixedHeight = (sectionGap * (sectionCount - 1)) +
             (headingAndGapPerSection * sectionCount) +
             totalCardGaps;
-        final rawCardHeight = (constraints.maxHeight - fixedHeight) / totalCards;
+        final rawCardHeight =
+            (constraints.maxHeight - fixedHeight) / totalCards;
 
         // Tighten aggressively on small devices to avoid overflow.
         final cardHeight = rawCardHeight.clamp(24.0, 52.0);
@@ -691,7 +732,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   cardHeight: cardHeight,
                   compact: compact,
                   hideSubtitle: hideSubtitle,
-                rowGap: cardGapCompact,
+                  rowGap: cardGapCompact,
                   onSelect: (_) {
                     unawaited(_stopSofyPreviewIfAny());
                     unawaited(_selectSofyVoice());
@@ -702,53 +743,79 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 ),
                 SizedBox(height: sectionGap),
               ],
-              _buildVoiceSection(
-                title: 'Male Voices',
-                isMaleSection: true,
-                voices: kInworldMaleVoices,
-                selectedVoiceId: activeSelectedVoiceId,
-                state: state,
-                cardHeight: cardHeight,
-                compact: compact,
-                hideSubtitle: hideSubtitle,
-                rowGap: cardGapCompact,
-                onSelect: (voice) {
-                  unawaited(_stopSofyPreviewIfAny());
-                  if (mounted) {
-                    setState(() {
-                      _isSofySelected = false;
-                      _singleSelectedVoiceId = voice.voiceId;
-                    });
-                  }
-                },
-                onCommit: (_) {
-                  unawaited(_commitSelectionAndClose(commitSelectedVoice));
-                },
-              ),
-              SizedBox(height: sectionGap),
-              _buildVoiceSection(
-                title: 'Female Voices',
-                isMaleSection: false,
-                voices: kInworldFemaleVoices,
-                selectedVoiceId: activeSelectedVoiceId,
-                state: state,
-                cardHeight: cardHeight,
-                compact: compact,
-                hideSubtitle: hideSubtitle,
-                rowGap: cardGapCompact,
-                onSelect: (voice) {
-                  unawaited(_stopSofyPreviewIfAny());
-                  if (mounted) {
-                    setState(() {
-                      _isSofySelected = false;
-                      _singleSelectedVoiceId = voice.voiceId;
-                    });
-                  }
-                },
-                onCommit: (_) {
-                  unawaited(_commitSelectionAndClose(commitSelectedVoice));
-                },
-              ),
+              if (showOnlyGenderVoices)
+                _buildVoiceSection(
+                  title: activeGenderTitle,
+                  isMaleSection: !state.isPartnerFemale,
+                  voices: activeGenderVoices,
+                  selectedVoiceId: activeSelectedVoiceId,
+                  state: state,
+                  cardHeight: cardHeight,
+                  compact: compact,
+                  hideSubtitle: hideSubtitle,
+                  rowGap: cardGapCompact,
+                  onSelect: (voice) {
+                    unawaited(_stopSofyPreviewIfAny());
+                    if (mounted) {
+                      setState(() {
+                        _isSofySelected = false;
+                        _singleSelectedVoiceId = voice.voiceId;
+                      });
+                    }
+                  },
+                  onCommit: (_) {
+                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
+                  },
+                )
+              else ...[
+                _buildVoiceSection(
+                  title: 'Male Voices',
+                  isMaleSection: true,
+                  voices: kInworldMaleVoices,
+                  selectedVoiceId: activeSelectedVoiceId,
+                  state: state,
+                  cardHeight: cardHeight,
+                  compact: compact,
+                  hideSubtitle: hideSubtitle,
+                  rowGap: cardGapCompact,
+                  onSelect: (voice) {
+                    unawaited(_stopSofyPreviewIfAny());
+                    if (mounted) {
+                      setState(() {
+                        _isSofySelected = false;
+                        _singleSelectedVoiceId = voice.voiceId;
+                      });
+                    }
+                  },
+                  onCommit: (_) {
+                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
+                  },
+                ),
+                SizedBox(height: sectionGap),
+                _buildVoiceSection(
+                  title: 'Female Voices',
+                  isMaleSection: false,
+                  voices: kInworldFemaleVoices,
+                  selectedVoiceId: activeSelectedVoiceId,
+                  state: state,
+                  cardHeight: cardHeight,
+                  compact: compact,
+                  hideSubtitle: hideSubtitle,
+                  rowGap: cardGapCompact,
+                  onSelect: (voice) {
+                    unawaited(_stopSofyPreviewIfAny());
+                    if (mounted) {
+                      setState(() {
+                        _isSofySelected = false;
+                        _singleSelectedVoiceId = voice.voiceId;
+                      });
+                    }
+                  },
+                  onCommit: (_) {
+                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
+                  },
+                ),
+              ],
             ],
           ),
         );
@@ -907,7 +974,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
               child: Text(
                 'Done',
                 style: GoogleFonts.inter(
-                    fontSize: 11,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
@@ -918,5 +985,4 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       ),
     );
   }
-
 }

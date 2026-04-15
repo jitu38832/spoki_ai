@@ -27,19 +27,19 @@ class _ChatlistState extends State<Chatlist> {
   static const Color _ctaBlue = Color(0xFF4E54C8);
   static const Color _ctaPurple = Color(0xFF7B61FF);
 
-  String _selectedGender = 'Female';
+  String _selectedGender = 'Male';
   String? _selectedImagePath;
 
   final TextEditingController nameController = TextEditingController();
 
-  /// Female avatars first (row 1), then male (row 2) — 3×2 grid.
+  /// Male avatars first (row 1), then female (row 2) — 3×2 grid.
   final List<String> _partnerLooks = [
-    "assets/images/girl1.png",
-    "assets/images/girl2.png",
-    "assets/images/girl3.png",
     "assets/images/boy1.png",
     "assets/images/boy2.png",
     "assets/images/boy3.png",
+    "assets/images/girl1.png",
+    "assets/images/girl2.png",
+    "assets/images/girl3.png",
   ];
 
   @override

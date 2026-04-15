@@ -62,6 +62,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   bool _isStoryTtsPreparing = false;
   bool _isSofyStorySpeaking = false;
   bool _cancelSofyStoryPlayback = false;
+  bool _didStartInworldStoryPrefetch = false;
   Map<String, String> availableLanguages = {};
   String? selectedLanguageCode;
 
@@ -69,8 +70,31 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   void initState() {
     initTts();
     super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _startStoryQuizStatusFlow());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startStoryQuizStatusFlow();
+      _scheduleInworldStoryPrefetch(includeAllVoices: true);
+    });
+  }
+
+  Future<void> _scheduleInworldStoryPrefetch({
+    bool includeAllVoices = false,
+    String? prioritizeVoiceId,
+  }) async {
+    if (!mounted || _didStartInworldStoryPrefetch) return;
+    final story =
+        widget.generateStoryResponse.data?.story.toString().trim() ?? '';
+    if (story.isEmpty) return;
+
+    _didStartInworldStoryPrefetch = true;
+    try {
+      await context.read<InworldTtsCubit>().prefetchStoryAudio(
+            story,
+            includeAllVoices: includeAllVoices,
+            prioritizeVoiceId: prioritizeVoiceId,
+          );
+    } finally {
+      _didStartInworldStoryPrefetch = false;
+    }
   }
 
   void _stopStoryQuizPoll() {
@@ -107,8 +131,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       return;
     }
 
-    _lastEmittedRequestId =
-        DateTime.now().microsecondsSinceEpoch.toString();
+    _lastEmittedRequestId = DateTime.now().microsecondsSinceEpoch.toString();
     _storyQuizSocket.emitGetStoryQuizStatus(
       storyId: storyId,
       token: token,
@@ -164,9 +187,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
         setState(() {
           _storyQuizPhase = _StoryQuizGenPhase.ready;
           _preloadedQuizFromSocket = quizMap;
-          _storyQuizHint = quizMap == null
-              ? 'Quiz is ready. Open to load questions.'
-              : null;
+          _storyQuizHint =
+              quizMap == null ? 'Quiz is ready. Open to load questions.' : null;
         });
         _stopStoryQuizPoll();
         break;
@@ -180,8 +202,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       case 'failed':
         setState(() {
           _storyQuizPhase = _StoryQuizGenPhase.failed;
-          _storyQuizHint =
-              d['error']?.toString() ?? 'Quiz generation failed.';
+          _storyQuizHint = d['error']?.toString() ?? 'Quiz generation failed.';
           _preloadedQuizFromSocket = null;
         });
         _stopStoryQuizPoll();
@@ -252,8 +273,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     }
   }
 
-  bool get _storyQuizYesEnabled =>
-      _storyQuizPhase == _StoryQuizGenPhase.ready;
+  bool get _storyQuizYesEnabled => _storyQuizPhase == _StoryQuizGenPhase.ready;
 
   Widget _buildStoryActionsRow() {
     return Row(
@@ -281,7 +301,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                 final inworldStoryActive = tts.playbackId == 'story' &&
                     (tts.status == InworldTtsStatus.loading ||
                         tts.status == InworldTtsStatus.playing);
-                final storyTtsActive = _isSofyStorySpeaking || inworldStoryActive;
+                final storyTtsActive =
+                    _isSofyStorySpeaking || inworldStoryActive;
                 return IconButton(
                   icon: _isStoryTtsPreparing
                       ? const SizedBox(
@@ -299,16 +320,21 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                       await stop();
                       return;
                     }
+                    unawaited(
+                      _scheduleInworldStoryPrefetch(includeAllVoices: true),
+                    );
                     final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const VoiceSettingsScreen(fromStory: true),
+                        builder: (_) =>
+                            const VoiceSettingsScreen(fromStory: true),
                       ),
                     );
                     if (!mounted || result is! Map) return;
                     final useSofy = result['useSofy'] == true;
                     final shouldPlay = result['playStoryTts'] == true;
-                    final selectedVoiceId = result['selectedVoiceId']?.toString();
+                    final selectedVoiceId =
+                        result['selectedVoiceId']?.toString();
                     if (shouldPlay) {
                       await speak(
                         useSofy: useSofy,
@@ -322,8 +348,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
             IconButton(
               icon: const Icon(Icons.download_outlined),
               onPressed: () {
-                final String title =
-                    widget.generateStoryResponse.data?.metadata?.title
+                final String title = widget
+                        .generateStoryResponse.data?.metadata?.title
                         .toString() ??
                     "";
                 final String description =
@@ -335,8 +361,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
             IconButton(
               icon: const Icon(Icons.share_outlined),
               onPressed: () {
-                final String title =
-                    widget.generateStoryResponse.data?.metadata?.title
+                final String title = widget
+                        .generateStoryResponse.data?.metadata?.title
                         .toString() ??
                     "";
                 final String description =
@@ -467,7 +493,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       }
 
       selectedLanguageCode ??= availableLanguages.keys.firstWhere(
-            (k) => k.startsWith("en"),
+        (k) => k.startsWith("en"),
         orElse: () => availableLanguages.keys.first,
       );
 
@@ -561,7 +587,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     var current = StringBuffer();
     for (final word in words) {
       final w = word.trim();
-      final nextLen = current.isEmpty ? w.length : current.length + 1 + w.length;
+      final nextLen =
+          current.isEmpty ? w.length : current.length + 1 + w.length;
       if (nextLen > chunkLimit && current.isNotEmpty) {
         chunks.add(current.toString());
         current = StringBuffer(w);
@@ -623,7 +650,6 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     }
   }
 
-
   @override
   void dispose() {
     _stopStoryQuizPoll();
@@ -638,6 +664,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     flutterTts.stop();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -674,7 +701,9 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                   children: [
                     // Title
                     textInter(
-                      text: widget.generateStoryResponse.data?.metadata?.title.toString()??"",
+                      text: widget.generateStoryResponse.data?.metadata?.title
+                              .toString() ??
+                          "",
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF6A1B9A),
@@ -726,10 +755,12 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             // Handle Success
                             if (state.status == AppStatus.wordMeaningSuccess) {
                               // Close loading dialog if open
-                              if (Navigator.canPop(context)) Navigator.pop(context);
+                              if (Navigator.canPop(context))
+                                Navigator.pop(context);
 
-                              WordMeaningResponse wordMeaningResponse =
-                              state.responseData?.response as WordMeaningResponse;
+                              WordMeaningResponse wordMeaningResponse = state
+                                  .responseData
+                                  ?.response as WordMeaningResponse;
 
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 showDialog(
@@ -737,31 +768,43 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                   builder: (_) => AlertDialog(
                                     title: Text(
                                       "Meaning of '${wordMeaningResponse.data?.word ?? 'Word'}'",
-                                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                      style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold),
                                     ),
                                     content: SizedBox(
-                                      width: double.maxFinite, // Crucial for proper layout in dialog
+                                      width: double
+                                          .maxFinite, // Crucial for proper layout in dialog
                                       height: 350, // Optional: limit height
                                       child: SingleChildScrollView(
                                         physics: const BouncingScrollPhysics(),
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           mainAxisSize: MainAxisSize.min,
                                           children: List.generate(
-                                            wordMeaningResponse.data?.meanings?.length ?? 0,
-                                                (index) {
-                                              final meaning = wordMeaningResponse.data!.meanings![index];
+                                            wordMeaningResponse
+                                                    .data?.meanings?.length ??
+                                                0,
+                                            (index) {
+                                              final meaning =
+                                                  wordMeaningResponse
+                                                      .data!.meanings![index];
                                               return Padding(
-                                                padding: const EdgeInsets.only(bottom: 16.0),
+                                                padding: const EdgeInsets.only(
+                                                    bottom: 16.0),
                                                 child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
                                                   children: [
                                                     // Part of Speech
                                                     Text(
-                                                      meaning.partOfSpeech ?? "",
+                                                      meaning.partOfSpeech ??
+                                                          "",
                                                       style: const TextStyle(
                                                         fontSize: 17,
-                                                        fontWeight: FontWeight.bold,
+                                                        fontWeight:
+                                                            FontWeight.bold,
                                                         color: Colors.indigo,
                                                       ),
                                                     ),
@@ -775,14 +818,21 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                                       ),
                                                     ),
                                                     // Optional: Example
-                                                    if (meaning.example != null && meaning.example!.isNotEmpty)
+                                                    if (meaning.example !=
+                                                            null &&
+                                                        meaning.example!
+                                                            .isNotEmpty)
                                                       Padding(
-                                                        padding: const EdgeInsets.only(top: 8),
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .only(top: 8),
                                                         child: Text(
                                                           "Example: ${meaning.example}",
-                                                          style: const TextStyle(
+                                                          style:
+                                                              const TextStyle(
                                                             fontSize: 15,
-                                                            fontStyle: FontStyle.italic,
+                                                            fontStyle: FontStyle
+                                                                .italic,
                                                             color: Colors.grey,
                                                           ),
                                                         ),
@@ -809,7 +859,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
 
                             // Handle Error
                             if (state.status == AppStatus.wordMeaningError) {
-                              if (Navigator.canPop(context)) Navigator.pop(context);
+                              if (Navigator.canPop(context))
+                                Navigator.pop(context);
 
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 showDialog(
@@ -817,7 +868,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                   builder: (_) => AlertDialog(
                                     title: const Text("Error"),
                                     content: Text(
-                                      state.errorData?.message ?? "Failed to fetch meaning.",
+                                      state.errorData?.message ??
+                                          "Failed to fetch meaning.",
                                     ),
                                     actions: [
                                       TextButton(
@@ -846,7 +898,9 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             }
 
                             return SelectableText(
-                              widget.generateStoryResponse.data?.story.toString() ?? "",
+                              widget.generateStoryResponse.data?.story
+                                      .toString() ??
+                                  "",
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w400,
@@ -854,19 +908,25 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                 color: Colors.black87,
                               ),
                               textAlign: TextAlign.start,
-                              onSelectionChanged: (TextSelection selection, SelectionChangedCause? cause) {
+                              onSelectionChanged: (TextSelection selection,
+                                  SelectionChangedCause? cause) {
                                 if (cause == SelectionChangedCause.longPress ||
                                     cause == SelectionChangedCause.drag) {
-                                  if (selection.isValid && selection.start != selection.end) {
-                                    final selectedText = widget.generateStoryResponse.data?.story
+                                  if (selection.isValid &&
+                                      selection.start != selection.end) {
+                                    final selectedText = widget
+                                        .generateStoryResponse.data?.story
                                         .toString()
-                                        .substring(selection.start, selection.end)
+                                        .substring(
+                                            selection.start, selection.end)
                                         .trim();
 
                                     if (selectedText.toString().isNotEmpty) {
-                                      debugPrint("Selected text: $selectedText");
+                                      debugPrint(
+                                          "Selected text: $selectedText");
                                       BlocProvider.of<AppCubit>(context)
-                                          .wordMeaning("", selectedText.toString());
+                                          .wordMeaning(
+                                              "", selectedText.toString());
                                     }
                                   }
                                 }
@@ -977,8 +1037,11 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                         "storyId": widget
                                             .generateStoryResponse.data?.id
                                             .toString(),
-                                        "difficulty": widget.generateStoryResponse
-                                                .data?.metadata?.learningLevel
+                                        "difficulty": widget
+                                                .generateStoryResponse
+                                                .data
+                                                ?.metadata
+                                                ?.learningLevel
                                                 .toString() ??
                                             "",
                                         "numberOfQuestions": 5,
@@ -1017,8 +1080,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   }
 
   Future<void> downloadPdfExternal(String title, String description) async {
-    final fontData =
-    await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+    final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
     final ttf = pw.Font.ttf(fontData);
 
     final safeTitle = title
@@ -1057,8 +1119,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     final downloadsDir = await getExternalStorageDirectory();
     if (downloadsDir == null) return;
 
-    final externalPath =
-        downloadsDir.path.split('Android')[0] + 'Download';
+    final externalPath = downloadsDir.path.split('Android')[0] + 'Download';
 
     final folder = Directory('$externalPath/Spoki AI');
     if (!await folder.exists()) {
@@ -1071,5 +1132,4 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     print('Saved to: ${file.path}');
     showToast(context: context, message: "Pdf Saved.");
   }
-
 }
