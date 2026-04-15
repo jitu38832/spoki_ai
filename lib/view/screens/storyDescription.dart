@@ -62,7 +62,6 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   bool _isStoryTtsPreparing = false;
   bool _isSofyStorySpeaking = false;
   bool _cancelSofyStoryPlayback = false;
-  bool _didStartInworldStoryPrefetch = false;
   Map<String, String> availableLanguages = {};
   String? selectedLanguageCode;
 
@@ -72,29 +71,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startStoryQuizStatusFlow();
-      _scheduleInworldStoryPrefetch(includeAllVoices: true);
     });
-  }
-
-  Future<void> _scheduleInworldStoryPrefetch({
-    bool includeAllVoices = false,
-    String? prioritizeVoiceId,
-  }) async {
-    if (!mounted || _didStartInworldStoryPrefetch) return;
-    final story =
-        widget.generateStoryResponse.data?.story.toString().trim() ?? '';
-    if (story.isEmpty) return;
-
-    _didStartInworldStoryPrefetch = true;
-    try {
-      await context.read<InworldTtsCubit>().prefetchStoryAudio(
-            story,
-            includeAllVoices: includeAllVoices,
-            prioritizeVoiceId: prioritizeVoiceId,
-          );
-    } finally {
-      _didStartInworldStoryPrefetch = false;
-    }
   }
 
   void _stopStoryQuizPoll() {
@@ -320,9 +297,6 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                       await stop();
                       return;
                     }
-                    unawaited(
-                      _scheduleInworldStoryPrefetch(includeAllVoices: true),
-                    );
                     final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
