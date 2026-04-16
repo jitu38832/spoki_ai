@@ -1,3 +1,6 @@
+# Local API secrets (copy from secrets.example.json)
+secrets.json
+
 # Miscellaneous
 *.class
 *.log

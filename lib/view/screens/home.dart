@@ -8,7 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/model/homebanner.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
-import 'package:spokiai/view/screens/login.dart';
+import 'package:spokiai/view/screens/signup.dart';
 import 'package:spokiai/view/screens/privacypolicy.dart';
 import 'package:spokiai/view/screens/termscondition.dart';
 import 'package:spokiai/view/utils/colors.dart';
@@ -168,17 +168,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Gift Icon
-              InkWell(
-                onTap: () {
-                  // navigate to gifts or rewards
-                },
-                child: const Icon(
-                  Icons.card_giftcard,
-                  size: 30,
-                  color: Colors.redAccent,
-                ),
-              ),
+              // Right header icon (gift / subscription) — commented out per product request
+              // InkWell(
+              //   onTap: () {
+              //     // navigate to gifts or rewards
+              //   },
+              //   child: const Icon(
+              //     Icons.card_giftcard,
+              //     size: 30,
+              //     color: Colors.redAccent,
+              //   ),
+              // ),
+              const SizedBox(width: 30),
             ],
           ),
 
@@ -376,7 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             Navigator.pushAndRemoveUntil(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => LoginScreen(),
+                                builder: (context) => const SignUpScreen(),
                               ),
                                   (route) => false,
                             );
@@ -420,7 +421,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             Navigator.pushAndRemoveUntil(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => LoginScreen(),
+                                builder: (context) => const SignUpScreen(),
                               ),
                                   (route) => false,
                             );

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/colors.dart';
 import '../utils/custom_widgets.dart';
-import 'login.dart';
+import 'signup.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   final String email;
@@ -157,7 +157,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const LoginScreen(),
+                          builder: (context) => const SignUpScreen(),
                         ),
                         (route) => false,
                       );

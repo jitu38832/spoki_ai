@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../model/getprofile.dart';
 import '../../model/signup.dart';
 import '../../viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
@@ -12,6 +13,7 @@ import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
 import '../utils/preference_manager.dart';
 import 'dashboard.dart';
+import 'editprofile.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -24,6 +26,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _routeAfterSignupProfile = false;
 
   final RegExp emailRegex = RegExp(
     r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
@@ -105,38 +108,75 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     listener: (context, state) async {
                       if (state.status == AppStatus.signupSuccess) {
                         SignUpResponse signUpResponse =
-                         state.responseData?.response as SignUpResponse;
+                            state.responseData?.response as SignUpResponse;
+                        final accessToken =
+                            signUpResponse.accessToken.toString();
+
                         await PreferenceManager.insertValue(
-                            key: "token",
-                            value: signUpResponse.accessToken
-                                .toString() ??
-                                "");
+                            key: "token", value: accessToken);
 
-                        showToast(context: context, message: "Logged in successfully");
+                        if (!context.mounted) return;
+                        showToast(
+                            context: context,
+                            message: "Logged in successfully");
 
+                        setState(() => _routeAfterSignupProfile = true);
+                        context.read<AppCubit>().getProfile(accessToken);
+                        return;
+                      }
+
+                      if (_routeAfterSignupProfile &&
+                          state.status == AppStatus.getProfileSuccess) {
+                        setState(() => _routeAfterSignupProfile = false);
+                        final response =
+                            state.responseData?.response as GetProfileResponse;
+                        if (!context.mounted) return;
+                        final incomplete =
+                            profileNeedsCompletion(response.data);
                         Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(
-                            builder: (context) {
-                              return DashboardScreen();
-                            },
+                            builder: (context) => incomplete
+                                ? const Editprofile(
+                                    isPostLoginSetup: true)
+                                : const DashboardScreen(),
                           ),
-                              (route) => false,
+                          (route) => false,
                         );
-                      } else if (state.status == AppStatus.signupError) {
+                        return;
+                      }
+
+                      if (_routeAfterSignupProfile &&
+                          state.status == AppStatus.getProfileError) {
+                        setState(() => _routeAfterSignupProfile = false);
+                        if (!context.mounted) return;
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const Editprofile(
+                                isPostLoginSetup: true),
+                          ),
+                          (route) => false,
+                        );
+                        return;
+                      }
+
+                      if (state.status == AppStatus.signupError) {
                         showToast(
                             context: context,
                             message: state.errorData?.message.toString() ?? "");
                       }
                     },
                     builder: (context, state) {
+                      final loading = state.status == AppStatus.signupLoading ||
+                          (_routeAfterSignupProfile &&
+                              state.status ==
+                                  AppStatus.getProfileLoading);
                       return button(
                         width: MediaQuery.of(context).size.width,
                         title: 'Login',
                         fontSize: 16,
-                        isLoading: state.status == AppStatus.signupLoading
-                            ? true
-                            : false,
+                        isLoading: loading,
                         fontWeight: FontWeight.w500,
                         context: context,
                         onPressed: () async {

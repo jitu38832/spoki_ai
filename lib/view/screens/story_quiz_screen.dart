@@ -14,7 +14,14 @@ import '../utils/preference_manager.dart';
 class StoryQuizScreen extends StatefulWidget {
   Map<String, dynamic> quizDetails = {};
 
-  StoryQuizScreen({super.key, required this.quizDetails});
+  /// When set (e.g. from Socket `storyQuizStatus` `data.quiz`), skips `quiz/generate` and uses this as `QuizQuesResponse.data`.
+  final Map<String, dynamic>? preloadedQuizData;
+
+  StoryQuizScreen({
+    super.key,
+    required this.quizDetails,
+    this.preloadedQuizData,
+  });
 
   @override
   State<StoryQuizScreen> createState() => _StoryQuizScreenState();
@@ -39,7 +46,25 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
   void initState() {
     super.initState();
     token = PreferenceManager.getStringValue(key: "token") ?? "";
-    BlocProvider.of<AppCubit>(context).getQuizQues(token, widget.quizDetails);
+    final pre = widget.preloadedQuizData;
+    if (pre != null && pre.isNotEmpty) {
+      try {
+        quesResponse = QuizQuesResponse.fromJson({
+          'success': true,
+          'data': pre,
+        });
+        final q = quesResponse.data?.questions;
+        if (q != null && q.isNotEmpty) {
+          questions = List<Questions>.from(q);
+          selectedAnswers = List.filled(questions.length, '');
+        }
+      } catch (_) {
+        questions = [];
+      }
+    }
+    if (questions.isEmpty) {
+      BlocProvider.of<AppCubit>(context).getQuizQues(token, widget.quizDetails);
+    }
   }
 
   void _previousQuestion() {
@@ -295,7 +320,8 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
               }
             },
             builder: (context, state) {
-              if (state.status == AppStatus.getQuizQuesLoading) {
+              if (questions.isEmpty &&
+                  state.status == AppStatus.getQuizQuesLoading) {
                 return SizedBox(
                   height: MediaQuery.of(context).size.height,
                   child: const Center(child: CircularProgressIndicator()),

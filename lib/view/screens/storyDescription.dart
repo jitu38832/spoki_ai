@@ -1,12 +1,17 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
+import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spokiai/model/generatestory.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
+import 'package:spokiai/view/screens/socket.dart';
 import 'package:spokiai/view/screens/story_quiz_screen.dart';
+import '../utils/preference_manager.dart';
 import '../../model/wordmeaning.dart';
 import '../../viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
@@ -16,6 +21,19 @@ import '../utils/custom_widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart';
+
+/// Quiz readiness from Socket `storyQuizStatus` (`quizGenerationStatus`).
+enum _StoryQuizGenPhase {
+  checking,
+  pending,
+  processing,
+  ready,
+  failed,
+  requestFailed,
+  offline,
+  noAuth,
+  noStory,
+}
 
 class StorydescriptionScreen extends StatefulWidget {
   GenerateStoryResponse generateStoryResponse = GenerateStoryResponse();
@@ -29,10 +47,19 @@ class StorydescriptionScreen extends StatefulWidget {
 class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   late FlutterTts flutterTts;
 
+  final SocketService _storyQuizSocket = SocketService();
+  Timer? _storyQuizPollTimer;
+  void Function(dynamic)? _storyQuizConnectHandler;
+  bool _storyQuizListenerAttached = false;
+  String? _lastEmittedRequestId;
+
+  _StoryQuizGenPhase _storyQuizPhase = _StoryQuizGenPhase.checking;
+  String? _storyQuizHint;
+  Map<String, dynamic>? _preloadedQuizFromSocket;
+
   double volume = 1.0;
   double pitch = 1.0;
   double rate = 0.5;
-  bool isSpeaking = false;
   Map<String, String> availableLanguages = {};
   String? selectedLanguageCode;
 
@@ -40,7 +67,191 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   void initState() {
     initTts();
     super.initState();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _startStoryQuizStatusFlow());
   }
+
+  void _stopStoryQuizPoll() {
+    _storyQuizPollTimer?.cancel();
+    _storyQuizPollTimer = null;
+  }
+
+  void _ensureStoryQuizPoll() {
+    _stopStoryQuizPoll();
+    _storyQuizPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      if (_storyQuizPhase != _StoryQuizGenPhase.pending &&
+          _storyQuizPhase != _StoryQuizGenPhase.processing) {
+        _stopStoryQuizPoll();
+        return;
+      }
+      _emitGetStoryQuizStatus();
+    });
+  }
+
+  void _emitGetStoryQuizStatus() {
+    final storyId = widget.generateStoryResponse.data?.id?.toString() ?? '';
+    final token = PreferenceManager.getStringValue(key: 'token') ?? '';
+    if (storyId.isEmpty) return;
+    if (token.isEmpty) return;
+
+    if (!_storyQuizSocket.isConnected) {
+      if (mounted) {
+        setState(() {
+          _storyQuizPhase = _StoryQuizGenPhase.offline;
+          _storyQuizHint = 'No connection. Waiting for network…';
+        });
+      }
+      return;
+    }
+
+    _lastEmittedRequestId =
+        DateTime.now().microsecondsSinceEpoch.toString();
+    _storyQuizSocket.emitGetStoryQuizStatus(
+      storyId: storyId,
+      token: token,
+      requestId: _lastEmittedRequestId,
+    );
+  }
+
+  void _onStoryQuizStatus(dynamic raw) {
+    if (!mounted) return;
+    if (raw is! Map) return;
+    final m = Map<String, dynamic>.from(raw);
+
+    final ridIn = m['requestId']?.toString();
+    if (ridIn != null &&
+        _lastEmittedRequestId != null &&
+        ridIn != _lastEmittedRequestId) {
+      return;
+    }
+
+    final success = m['success'] == true;
+    if (!success) {
+      setState(() {
+        _storyQuizPhase = _StoryQuizGenPhase.requestFailed;
+        _storyQuizHint =
+            m['message']?.toString() ?? 'Could not check quiz status.';
+        _preloadedQuizFromSocket = null;
+      });
+      _stopStoryQuizPoll();
+      return;
+    }
+
+    final data = m['data'];
+    if (data is! Map) {
+      setState(() {
+        _storyQuizPhase = _StoryQuizGenPhase.requestFailed;
+        _storyQuizHint = 'Invalid quiz status response.';
+      });
+      _stopStoryQuizPoll();
+      return;
+    }
+
+    final d = Map<String, dynamic>.from(data);
+    final qStatus =
+        d['quizGenerationStatus']?.toString().toLowerCase().trim() ?? '';
+
+    switch (qStatus) {
+      case 'ready':
+        final quiz = d['quiz'];
+        Map<String, dynamic>? quizMap;
+        if (quiz is Map) {
+          quizMap = Map<String, dynamic>.from(quiz);
+        }
+        setState(() {
+          _storyQuizPhase = _StoryQuizGenPhase.ready;
+          _preloadedQuizFromSocket = quizMap;
+          _storyQuizHint = quizMap == null
+              ? 'Quiz is ready. Open to load questions.'
+              : null;
+        });
+        _stopStoryQuizPoll();
+        break;
+      case 'processing':
+        setState(() {
+          _storyQuizPhase = _StoryQuizGenPhase.processing;
+          _storyQuizHint = 'Generating quiz…';
+        });
+        _ensureStoryQuizPoll();
+        break;
+      case 'failed':
+        setState(() {
+          _storyQuizPhase = _StoryQuizGenPhase.failed;
+          _storyQuizHint =
+              d['error']?.toString() ?? 'Quiz generation failed.';
+          _preloadedQuizFromSocket = null;
+        });
+        _stopStoryQuizPoll();
+        break;
+      case 'pending':
+        setState(() {
+          _storyQuizPhase = _StoryQuizGenPhase.pending;
+          _storyQuizHint = 'Quiz not ready yet…';
+        });
+        _ensureStoryQuizPoll();
+        break;
+      default:
+        setState(() {
+          _storyQuizPhase = _StoryQuizGenPhase.checking;
+          _storyQuizHint = null;
+        });
+    }
+  }
+
+  void _startStoryQuizStatusFlow() {
+    final storyId = widget.generateStoryResponse.data?.id?.toString() ?? '';
+    if (storyId.isEmpty) {
+      setState(() {
+        _storyQuizPhase = _StoryQuizGenPhase.noStory;
+        _storyQuizHint = 'Story ID missing.';
+      });
+      return;
+    }
+
+    final token = PreferenceManager.getStringValue(key: 'token') ?? '';
+    if (token.isEmpty) {
+      setState(() {
+        _storyQuizPhase = _StoryQuizGenPhase.noAuth;
+        _storyQuizHint = 'Log in to unlock the quiz.';
+      });
+      return;
+    }
+
+    _storyQuizSocket.initSocket();
+    if (!_storyQuizListenerAttached) {
+      _storyQuizSocket.socket.on('storyQuizStatus', _onStoryQuizStatus);
+      _storyQuizListenerAttached = true;
+    }
+
+    if (_storyQuizSocket.isConnected) {
+      setState(() {
+        _storyQuizPhase = _StoryQuizGenPhase.checking;
+        _storyQuizHint = 'Checking quiz…';
+      });
+      _emitGetStoryQuizStatus();
+    } else {
+      setState(() {
+        _storyQuizPhase = _StoryQuizGenPhase.checking;
+        _storyQuizHint = 'Connecting…';
+      });
+      _storyQuizConnectHandler = (dynamic _) {
+        if (!mounted) return;
+        if (_storyQuizConnectHandler != null) {
+          _storyQuizSocket.socket.off('connect', _storyQuizConnectHandler!);
+          _storyQuizConnectHandler = null;
+        }
+        setState(() {
+          _storyQuizHint = 'Checking quiz…';
+        });
+        _emitGetStoryQuizStatus();
+      };
+      _storyQuizSocket.socket.on('connect', _storyQuizConnectHandler!);
+    }
+  }
+
+  bool get _storyQuizYesEnabled =>
+      _storyQuizPhase == _StoryQuizGenPhase.ready;
   Future<void> initTts() async {
     flutterTts = FlutterTts();
 
@@ -55,11 +266,10 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     await flutterTts.setPitch(pitch);
 
     // Callbacks
-    flutterTts.setStartHandler(() => setState(() => isSpeaking = true));
-    flutterTts.setCompletionHandler(() => setState(() => isSpeaking = false));
-    flutterTts.setCancelHandler(() => setState(() => isSpeaking = false));
+    flutterTts.setStartHandler(() {});
+    flutterTts.setCompletionHandler(() {});
+    flutterTts.setCancelHandler(() {});
     flutterTts.setErrorHandler((msg) {
-      setState(() => isSpeaking = false);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Error: $msg")));
@@ -133,26 +343,29 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   }
 
   Future<void> speak() async {
-    if (widget.generateStoryResponse.data!.story.toString().isEmpty) return;
-
-    await flutterTts.setVolume(volume);
-    await flutterTts.setSpeechRate(rate);
-    await flutterTts.setPitch(pitch);
-    await flutterTts.setLanguage(selectedLanguageCode ?? "en-US");
-
-    int result = await flutterTts
-        .speak(widget.generateStoryResponse.data!.story.toString());
-    if (result == 1) setState(() => isSpeaking = true);
+    final story = widget.generateStoryResponse.data?.story.toString() ?? '';
+    if (story.isEmpty || !mounted) return;
+    final cubit = context.read<InworldTtsCubit>();
+    if (!cubit.state.audioEnabled) return;
+    await cubit.speak(story, playbackId: 'story');
   }
 
   Future<void> stop() async {
-    int result = await flutterTts.stop();
-    if (result == 1) setState(() => isSpeaking = false);
+    await context.read<InworldTtsCubit>().stop();
   }
 
 
   @override
   void dispose() {
+    _stopStoryQuizPoll();
+    if (_storyQuizListenerAttached) {
+      _storyQuizSocket.socket.off('storyQuizStatus', _onStoryQuizStatus);
+      _storyQuizListenerAttached = false;
+    }
+    if (_storyQuizConnectHandler != null) {
+      _storyQuizSocket.socket.off('connect', _storyQuizConnectHandler!);
+      _storyQuizConnectHandler = null;
+    }
     flutterTts.stop();
     super.dispose();
   }
@@ -419,16 +632,32 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             ),
                             Row(
                               children: [
-                                IconButton(
-                                  icon: Icon(!isSpeaking
-                                      ? Icons.volume_up_outlined
-                                      : Icons.stop),
-                                  onPressed: () {
-                                    if (isSpeaking) {
-                                      stop(); // call stop
-                                    } else {
-                                      speak(); // call speak
+                                BlocBuilder<InworldTtsCubit, InworldTtsState>(
+                                  buildWhen: (a, b) =>
+                                      a.status != b.status ||
+                                      a.playbackId != b.playbackId ||
+                                      a.audioEnabled != b.audioEnabled,
+                                  builder: (context, tts) {
+                                    if (!tts.audioEnabled) {
+                                      return const SizedBox.shrink();
                                     }
+                                    final storyActive = tts.playbackId == 'story' &&
+                                        (tts.status == InworldTtsStatus.loading ||
+                                            tts.status == InworldTtsStatus.playing);
+                                    return IconButton(
+                                      icon: Icon(
+                                        storyActive
+                                            ? Icons.stop
+                                            : Icons.volume_up_outlined,
+                                      ),
+                                      onPressed: () {
+                                        if (storyActive) {
+                                          stop();
+                                        } else {
+                                          speak();
+                                        }
+                                      },
+                                    );
                                   },
                                 ),
                                 IconButton(
@@ -509,35 +738,69 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
                   ),
+                  if (_storyQuizHint != null &&
+                      _storyQuizHint!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.center,
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              _storyQuizHint!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade700,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: appColor,
+                        backgroundColor:
+                            _storyQuizYesEnabled ? appColor : Colors.grey.shade400,
+                        disabledBackgroundColor: Colors.grey.shade400,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        elevation: 3,
+                        elevation: _storyQuizYesEnabled ? 3 : 0,
                       ),
-                      onPressed: () {
-                        Map<String, dynamic> quizDetails = {
-                          "storyId": widget.generateStoryResponse.data?.id
-                              .toString(),
-                          "difficulty": widget.generateStoryResponse
-                              .data?.metadata?.learningLevel
-                              .toString() ??
-                              "",
-                          "numberOfQuestions": 5
-                        };
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (context) {
-                            return StoryQuizScreen(
-                                quizDetails: quizDetails);
-                          },
-                        ));
-                      },
+                      onPressed: _storyQuizYesEnabled
+                          ? () {
+                              final quizDetails = <String, dynamic>{
+                                "storyId": widget
+                                    .generateStoryResponse.data?.id
+                                    .toString(),
+                                "difficulty": widget.generateStoryResponse
+                                        .data?.metadata?.learningLevel
+                                        .toString() ??
+                                    "",
+                                "numberOfQuestions": 5,
+                              };
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => StoryQuizScreen(
+                                    quizDetails: quizDetails,
+                                    preloadedQuizData:
+                                        _preloadedQuizFromSocket,
+                                  ),
+                                ),
+                              );
+                            }
+                          : null,
                       child: textInter(
                         text: "Yes",
                         fontSize: 18,
