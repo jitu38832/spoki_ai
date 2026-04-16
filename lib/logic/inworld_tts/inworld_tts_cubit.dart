@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -27,6 +28,7 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
   final InworldTtsRepository _repository;
   final AudioPlayer _player = AudioPlayer();
   StreamSubscription<void>? _completeSub;
+  final Set<String> _prefetchKeysInProgress = <String>{};
 
   Future<void> loadPreferences() async {
     final male = await _repository.getMaleVoiceId();
@@ -111,6 +113,85 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
     return t.substring(0, InworldTtsConfig.maxTextLength);
   }
 
+  List<String> _resolveVoiceIdsForPrefetch({
+    String? prioritizeVoiceId,
+    bool includeAllVoices = false,
+  }) {
+    final ordered = LinkedHashSet<String>();
+    final p = prioritizeVoiceId?.trim();
+    if (p != null && p.isNotEmpty && isKnownInworldVoiceId(p)) {
+      ordered.add(p);
+    }
+
+    if (includeAllVoices) {
+      for (final entry in allInworldTtsVoices) {
+        ordered.add(entry.voiceId);
+      }
+      return ordered.toList(growable: false);
+    }
+
+    if (state.effectiveVoiceId.trim().isNotEmpty) {
+      ordered.add(state.effectiveVoiceId.trim());
+    }
+    if (state.maleVoiceId.trim().isNotEmpty) {
+      ordered.add(state.maleVoiceId.trim());
+    }
+    if (state.femaleVoiceId.trim().isNotEmpty) {
+      ordered.add(state.femaleVoiceId.trim());
+    }
+    return ordered.toList(growable: false);
+  }
+
+  /// Warms the repository audio cache in background so first play is faster.
+  Future<void> prefetchStoryAudio(
+    String text, {
+    String? prioritizeVoiceId,
+    bool includeAllVoices = false,
+  }) async {
+    if (!InworldTtsConfig.hasCredentials) return;
+
+    final t = _truncate(text);
+    if (t.isEmpty) return;
+
+    final modelId = state.modelId.isNotEmpty
+        ? state.modelId
+        : InworldTtsConfig.defaultModelId;
+    final speakingRate = displaySpeedToSpeakingRate(state.speedSlider);
+    final temperature = displayTemperatureToApi(state.temperatureSlider);
+    final voiceIds = _resolveVoiceIdsForPrefetch(
+      prioritizeVoiceId: prioritizeVoiceId,
+      includeAllVoices: includeAllVoices,
+    );
+    if (voiceIds.isEmpty) return;
+
+    for (final voiceId in voiceIds) {
+      final key = [
+        t,
+        voiceId,
+        modelId,
+        speakingRate.toStringAsFixed(3),
+        temperature.toStringAsFixed(3),
+      ].join('||');
+      if (_prefetchKeysInProgress.contains(key)) {
+        continue;
+      }
+      _prefetchKeysInProgress.add(key);
+      try {
+        await _repository.synthesize(
+          text: t,
+          voiceId: voiceId,
+          modelId: modelId,
+          speakingRate: speakingRate,
+          temperature: temperature,
+        );
+      } catch (_) {
+        // Prefetch is best-effort. Runtime speak() will surface real errors.
+      } finally {
+        _prefetchKeysInProgress.remove(key);
+      }
+    }
+  }
+
   /// [playbackId] — e.g. chat message id, or `'story'` for story screen.
   /// [voiceIdForPreview] — optional override for voice grid preview.
   Future<void> speak(
@@ -148,9 +229,7 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
     try {
       final voiceId = () {
         final o = voiceIdForPreview?.trim();
-        if (o != null &&
-            o.isNotEmpty &&
-            isKnownInworldVoiceId(o)) {
+        if (o != null && o.isNotEmpty && isKnownInworldVoiceId(o)) {
           return o;
         }
         return state.effectiveVoiceId;
@@ -159,10 +238,8 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
           ? state.modelId
           : InworldTtsConfig.defaultModelId;
 
-      final speakingRate =
-          displaySpeedToSpeakingRate(state.speedSlider);
-      final temperature =
-          displayTemperatureToApi(state.temperatureSlider);
+      final speakingRate = displaySpeedToSpeakingRate(state.speedSlider);
+      final temperature = displayTemperatureToApi(state.temperatureSlider);
 
       final bytes = await _repository.synthesize(
         text: t,

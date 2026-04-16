@@ -2,156 +2,454 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/core/inworld_tts_audio_mapping.dart';
 import 'package:spokiai/core/inworld_tts_voice_catalog.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
+import 'package:spokiai/view/utils/preference_manager.dart';
 import '../utils/colors.dart';
 
 class VoiceSettingsScreen extends StatefulWidget {
-  const VoiceSettingsScreen({super.key});
+  const VoiceSettingsScreen({
+    super.key,
+    this.fromStory = false,
+  });
+
+  final bool fromStory;
 
   @override
   State<VoiceSettingsScreen> createState() => _VoiceSettingsScreenState();
 }
 
 class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
-  bool _tabInited = false;
-  bool _isMaleTab = true;
+  static const String _previewPlaybackId = '__voice_preview__';
+  static const String _storySofyLocalVoiceId = '__sofy_local_tts__';
+  static const String _selectedVoicePrefKey =
+      'voice_settings_selected_voice_id';
+  static const InworldTtsVoiceEntry _storySofyEntry = InworldTtsVoiceEntry(
+    voiceId: _storySofyLocalVoiceId,
+    displayName: 'Sofy',
+    subtitle: 'Classic & Friendly',
+  );
+  late final FlutterTts _sofyTts;
+  String? _previewingVoiceId;
+  bool _initialSlidersSet = false;
+  bool _storyDefaultApplied = false;
+  bool _isSofySelected = false;
+  String? _singleSelectedVoiceId;
+  bool _isSofyLocalLoading = false;
+  bool _isSofyLocalPlaying = false;
 
-  static const _previewText =
-      'Hello. This is how this voice sounds with your current settings.';
+  @override
+  void initState() {
+    super.initState();
+    _sofyTts = FlutterTts();
+    _sofyTts.setStartHandler(() {
+      if (!mounted) return;
+      setState(() {
+        _isSofyLocalLoading = false;
+        _isSofyLocalPlaying = true;
+      });
+    });
+    _sofyTts.setCompletionHandler(_resetSofyPreviewState);
+    _sofyTts.setCancelHandler(_resetSofyPreviewState);
+    _sofyTts.setErrorHandler((_) => _resetSofyPreviewState());
+  }
+
+  @override
+  void dispose() {
+    _sofyTts.stop();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_tabInited) {
-      _tabInited = true;
-      final female =
-          context.read<InworldTtsCubit>().state.isPartnerFemale;
-      _isMaleTab = !female;
+    if (_initialSlidersSet) return;
+    _initialSlidersSet = true;
+    final cubit = context.read<InworldTtsCubit>();
+    unawaited(cubit.setSpeedSlider(1.0));
+    unawaited(cubit.setTemperatureSlider(1.0));
+    final saved =
+        PreferenceManager.getStringValue(key: _selectedVoicePrefKey)?.trim();
+    if (saved != null && saved.isNotEmpty) {
+      _singleSelectedVoiceId = saved;
+      _isSofySelected = saved == _storySofyLocalVoiceId;
+    } else {
+      _singleSelectedVoiceId = cubit.state.effectiveVoiceId;
+      _isSofySelected = false;
+    }
+    if (widget.fromStory && !_storyDefaultApplied) {
+      _storyDefaultApplied = true;
+      if (_singleSelectedVoiceId == null || _singleSelectedVoiceId!.isEmpty) {
+        _isSofySelected = true;
+        _singleSelectedVoiceId = _storySofyLocalVoiceId;
+      }
+    }
+
+    // Chat screen: enforce gender-consistent default voice selection.
+    if (!widget.fromStory) {
+      final isFemale = cubit.state.isPartnerFemale;
+      final selected = _singleSelectedVoiceId?.trim();
+      final validForGender = selected != null &&
+          selected.isNotEmpty &&
+          ((isFemale && isFemaleInworldVoiceId(selected)) ||
+              (!isFemale && isMaleInworldVoiceId(selected)));
+      if (!validForGender) {
+        _singleSelectedVoiceId =
+            isFemale ? defaultInworldFemaleVoiceId : defaultInworldMaleVoiceId;
+      }
     }
   }
 
-  int _indexForVoice(List<InworldTtsVoiceEntry> list, String voiceId) {
-    final i = list.indexWhere((e) => e.voiceId == voiceId);
-    return i >= 0 ? i : 0;
+  String _previewTextFor(String voiceName) {
+    return 'Hi, I am $voiceName. How may I help you?';
   }
 
-  Future<void> _preview(InworldTtsVoiceEntry entry) async {
+  double _valueToSliderPosition(double value) {
+    final v = value.clamp(0.0, 1.5);
+    if (v <= 1.0) {
+      // Map 0..1 into first half of the bar.
+      return v / 2.0;
+    }
+    // Map 1..1.5 into second half of the bar.
+    return 0.5 + (v - 1.0);
+  }
+
+  double _sliderPositionToValue(double position) {
+    final p = position.clamp(0.0, 1.0);
+    if (p <= 0.5) {
+      return p * 2.0;
+    }
+    return 1.0 + (p - 0.5);
+  }
+
+  double _quantizeSliderValue(double value) {
+    final v = value.clamp(0.0, 1.5);
+    if (v <= 1.0) {
+      // 0, 0.25, 0.5, 0.75, 1
+      return (v / 0.25).round() * 0.25;
+    }
+    // After 1: 1.25, 1.5
+    return 1.0 + (((v - 1.0) / 0.25).round() * 0.25);
+  }
+
+  bool _isPreviewPlayingFor({
+    required InworldTtsState state,
+    required String voiceId,
+  }) {
+    if (widget.fromStory && voiceId == _storySofyLocalVoiceId) {
+      return _previewingVoiceId == voiceId && _isSofyLocalPlaying;
+    }
+    final samePlayback = state.playbackId == _previewPlaybackId;
+    return samePlayback &&
+        state.status == InworldTtsStatus.playing &&
+        _previewingVoiceId == voiceId;
+  }
+
+  bool _isPreviewLoadingFor({
+    required InworldTtsState state,
+    required String voiceId,
+  }) {
+    if (widget.fromStory && voiceId == _storySofyLocalVoiceId) {
+      return _previewingVoiceId == voiceId && _isSofyLocalLoading;
+    }
+    final samePlayback = state.playbackId == _previewPlaybackId;
+    return samePlayback &&
+        state.status == InworldTtsStatus.loading &&
+        _previewingVoiceId == voiceId;
+  }
+
+  Future<void> _togglePreview(
+    InworldTtsVoiceEntry entry,
+    InworldTtsState state,
+  ) async {
+    if (widget.fromStory && entry.voiceId == _storySofyLocalVoiceId) {
+      await _toggleSofyPreview(entry);
+      return;
+    }
     final cubit = context.read<InworldTtsCubit>();
     if (!cubit.state.audioEnabled) return;
+    await _stopSofyPreviewIfAny();
+    final isSameVoicePlaying = _isPreviewPlayingFor(
+      state: state,
+      voiceId: entry.voiceId,
+    );
+
+    if (isSameVoicePlaying) {
+      await cubit.stop();
+      if (mounted) {
+        setState(() => _previewingVoiceId = null);
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _previewingVoiceId = entry.voiceId);
+    }
     await cubit.speak(
-      _previewText,
-      playbackId: '__voice_preview__',
+      _previewTextFor(entry.displayName),
+      playbackId: _previewPlaybackId,
       voiceIdForPreview: entry.voiceId,
     );
+  }
+
+  void _resetSofyPreviewState() {
+    if (!mounted) return;
+    setState(() {
+      _isSofyLocalLoading = false;
+      _isSofyLocalPlaying = false;
+      if (_previewingVoiceId == _storySofyLocalVoiceId) {
+        _previewingVoiceId = null;
+      }
+    });
+  }
+
+  Future<void> _stopSofyPreviewIfAny() async {
+    if (!_isSofyLocalLoading && !_isSofyLocalPlaying) return;
+    await _sofyTts.stop();
+    _resetSofyPreviewState();
+  }
+
+  Future<void> _toggleSofyPreview(InworldTtsVoiceEntry entry) async {
+    if (_isSofyLocalLoading || _isSofyLocalPlaying) {
+      await _sofyTts.stop();
+      _resetSofyPreviewState();
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _previewingVoiceId = entry.voiceId;
+      _isSofyLocalLoading = true;
+      _isSofyLocalPlaying = false;
+    });
+    await _sofyTts.stop();
+    await _sofyTts.setLanguage('en-US');
+    await _sofyTts.setSpeechRate(0.45);
+    final res = await _sofyTts.speak(_previewTextFor(entry.displayName));
+    if (res != 1) {
+      _resetSofyPreviewState();
+    }
+  }
+
+  Future<void> _selectSofyVoice() async {
+    if (!widget.fromStory) return;
+    if (mounted) {
+      setState(() {
+        _isSofySelected = true;
+        _singleSelectedVoiceId = _storySofyLocalVoiceId;
+      });
+    }
+  }
+
+  String _resolveActiveSelectedVoiceId(
+    InworldTtsState state,
+    String selectedMale,
+    String selectedFemale,
+  ) {
+    if (widget.fromStory && _isSofySelected) {
+      return _storySofyLocalVoiceId;
+    }
+    final pinned = _singleSelectedVoiceId?.trim();
+    if (pinned != null && pinned.isNotEmpty) {
+      if (pinned == _storySofyLocalVoiceId) {
+        return widget.fromStory
+            ? pinned
+            : (state.isPartnerFemale ? selectedFemale : selectedMale);
+      }
+      if (widget.fromStory) {
+        if (isKnownInworldVoiceId(pinned)) return pinned;
+      } else {
+        if (state.isPartnerFemale && isFemaleInworldVoiceId(pinned)) {
+          return pinned;
+        }
+        if (!state.isPartnerFemale && isMaleInworldVoiceId(pinned)) {
+          return pinned;
+        }
+      }
+    }
+    return state.isPartnerFemale ? selectedFemale : selectedMale;
+  }
+
+  Future<void> _commitSelectionAndClose(String voiceId) async {
+    final cubit = context.read<InworldTtsCubit>();
+    await _stopSofyPreviewIfAny();
+    await cubit.stop();
+
+    if (widget.fromStory && voiceId == _storySofyLocalVoiceId) {
+      PreferenceManager.insertValue(key: _selectedVoicePrefKey, value: voiceId);
+      if (mounted) {
+        Navigator.pop(context, {
+          'playStoryTts': true,
+          'useSofy': true,
+          'selectedVoiceId': voiceId,
+        });
+      }
+      return;
+    }
+
+    if (isMaleInworldVoiceId(voiceId)) {
+      await cubit.setMaleVoice(voiceId);
+      await cubit.setPartnerGender('Male');
+    } else if (isFemaleInworldVoiceId(voiceId)) {
+      await cubit.setFemaleVoice(voiceId);
+      await cubit.setPartnerGender('Female');
+    }
+    PreferenceManager.insertValue(key: _selectedVoicePrefKey, value: voiceId);
+
+    if (!mounted) return;
+    if (widget.fromStory) {
+      Navigator.pop(context, {
+        'playStoryTts': true,
+        'useSofy': false,
+        'selectedVoiceId': voiceId,
+      });
+    } else {
+      Navigator.pop(context);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFE7E7EE),
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(
-        title: Text(
-          'Voice Settings',
-          style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700),
-        ),
-        centerTitle: true,
-        elevation: 0.8,
-        toolbarHeight: 48,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-      ),
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: BlocConsumer<InworldTtsCubit, InworldTtsState>(
-                listenWhen: (a, b) =>
-                    b.status == InworldTtsStatus.error &&
-                    (b.errorMessage?.isNotEmpty ?? false) &&
-                    a.errorMessage != b.errorMessage,
-                listener: (context, state) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(state.errorMessage!)),
-                  );
-                },
-                builder: (context, state) {
-                  final maleList = kInworldMaleVoices;
-                  final femaleList = kInworldFemaleVoices;
-                  final voices = _isMaleTab ? maleList : femaleList;
-                  final selectedVoiceId =
-                      _isMaleTab ? state.maleVoiceId : state.femaleVoiceId;
-                  final selectedIndex = _indexForVoice(voices, selectedVoiceId);
+        child: BlocConsumer<InworldTtsCubit, InworldTtsState>(
+          listenWhen: (a, b) =>
+              a.status != b.status ||
+              a.playbackId != b.playbackId ||
+              a.errorMessage != b.errorMessage,
+          listener: (context, state) {
+            if (_previewingVoiceId == _storySofyLocalVoiceId &&
+                (_isSofyLocalLoading || _isSofyLocalPlaying)) {
+              return;
+            }
+            final previewEnded = _previewingVoiceId != null &&
+                (state.playbackId != _previewPlaybackId ||
+                    state.status == InworldTtsStatus.idle ||
+                    state.status == InworldTtsStatus.error);
+            if (previewEnded && mounted) {
+              setState(() => _previewingVoiceId = null);
+            }
+            if (state.status == InworldTtsStatus.error &&
+                (state.errorMessage?.isNotEmpty ?? false)) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(state.errorMessage!)),
+              );
+            }
+          },
+          builder: (context, state) {
+            final speedLabel = speedBandLabel(state.speedSlider);
+            final emotionLabel = temperatureBandLabel(state.temperatureSlider);
+            final selectedMale = state.maleVoiceId.isNotEmpty
+                ? state.maleVoiceId
+                : defaultInworldMaleVoiceId;
+            final selectedFemale = state.femaleVoiceId.isNotEmpty
+                ? state.femaleVoiceId
+                : defaultInworldFemaleVoiceId;
 
-                  final speedLabel = speedBandLabel(state.speedSlider);
-                  final tempLabel = temperatureBandLabel(state.temperatureSlider);
-
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Voice',
-                          style: GoogleFonts.inter(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _buildGenderTabs(),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: _buildVoicesCard(
-                            voices: voices,
-                            selectedIndex: selectedIndex,
-                            state: state,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildRangedSliderCard(
-                          title: 'Voice Speed',
-                          value: state.speedSlider,
-                          bandLabel: speedLabel,
-                          onChanged: (v) => unawaited(
-                            context.read<InworldTtsCubit>().setSpeedSlider(v),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _buildRangedSliderCard(
-                          title: 'Voice Temperature',
-                          value: state.temperatureSlider,
-                          bandLabel: tempLabel,
-                          onChanged: (v) => unawaited(
-                            context
-                                .read<InworldTtsCubit>()
-                                .setTemperatureSlider(v),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Audio Mode',
-                          style: GoogleFonts.inter(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _buildAudioModeSwitch(state.audioEnabled),
-                      ],
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: Column(
+                  children: [
+                    _buildDialogHeader(),
+                    Divider(height: 1, color: Colors.grey.shade300),
+                    Expanded(
+                      child: _buildVoiceListsArea(
+                        state: state,
+                        selectedMale: selectedMale,
+                        selectedFemale: selectedFemale,
+                      ),
                     ),
-                  );
-                },
+                    _buildSpeedSlider(
+                      speedValue: state.speedSlider,
+                      speedLabel: speedLabel,
+                    ),
+                    _buildEmotionSlider(
+                      value: state.temperatureSlider,
+                      label: emotionLabel,
+                    ),
+                    if (!widget.fromStory) _buildDoneButton(),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDialogHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 10, 4),
+      child: SizedBox(
+        height: 34,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7A5CFF), Color(0xFF4C40CC)],
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: appColor.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.volume_up_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-              child: _buildContinueButton(),
+            Text(
+              'Choose Your Voice',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF242635),
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF0F1F6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    color: Color(0xFF6C6E7A),
+                    size: 18,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -159,403 +457,527 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     );
   }
 
-  Widget _buildGenderTabs() {
-    return Row(
-      children: [
-        Expanded(
-          child: _tabButton(
-            label: 'Male',
-            selected: _isMaleTab,
-            selectedColors: const [Color(0xFF2CE31D), Color(0xFF21C10D)],
-            onTap: () => setState(() => _isMaleTab = true),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _tabButton(
-            label: 'Female',
-            selected: !_isMaleTab,
-            selectedColors: const [Color(0xFF1F88CC), Color(0xFF2F6EE6)],
-            onTap: () => setState(() => _isMaleTab = false),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _tabButton({
-    required String label,
-    required bool selected,
-    required List<Color> selectedColors,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: selected
-              ? LinearGradient(colors: selectedColors)
-              : null,
-          color: selected ? null : const Color(0xFFF1F1F1),
-          border: Border.all(color: const Color(0xFFD8D8D8)),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: selected ? Colors.black : Colors.grey[600],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVoicesCard({
-    required List<InworldTtsVoiceEntry> voices,
-    required int selectedIndex,
-    required InworldTtsState state,
-  }) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F2FF),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _isMaleTab ? 'Male Voices' : 'Female Voices',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.black54,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                const spacing = 6.0;
-                final maxW = constraints.maxWidth;
-                final maxH = constraints.maxHeight;
-                final cellW = (maxW - spacing) / 2;
-                final cellH = (maxH - spacing) / 2;
-                final aspect =
-                    (cellW / cellH.clamp(1.0, 999.0)).clamp(1.4, 4.2);
-                return GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.zero,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: spacing,
-                    mainAxisSpacing: spacing,
-                    childAspectRatio: aspect,
-                  ),
-                  itemCount: voices.length,
-                  itemBuilder: (context, index) {
-                    final voice = voices[index];
-                    final selected = selectedIndex == index;
-                    final subtitle = voice.subtitle.isNotEmpty
-                        ? voice.subtitle
-                        : voice.displayName;
-                    return Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () {
-                          final cubit = context.read<InworldTtsCubit>();
-                          if (_isMaleTab) {
-                            unawaited(cubit.setMaleVoice(voice.voiceId));
-                          } else {
-                            unawaited(cubit.setFemaleVoice(voice.voiceId));
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: selected
-                                  ? appColor
-                                  : const Color(0xFFE2E2E2),
-                              width: selected ? 1.6 : 1.0,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 12,
-                                backgroundColor: _isMaleTab
-                                    ? const Color(0xFFE1EEFF)
-                                    : const Color(0xFFFFE9F4),
-                                child: Icon(
-                                  _isMaleTab ? Icons.man : Icons.woman,
-                                  size: 14,
-                                  color:
-                                      _isMaleTab ? Colors.blue : Colors.pink,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      voice.displayName,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        height: 1.15,
-                                      ),
-                                    ),
-                                    Text(
-                                      subtitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 9.5,
-                                        color: Colors.black45,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                padding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
-                                constraints: const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 28,
-                                ),
-                                icon: Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  color: selected
-                                      ? appColor
-                                      : Colors.blue[300],
-                                  size: 20,
-                                ),
-                                onPressed: state.audioEnabled
-                                    ? () => _preview(voice)
-                                    : null,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRangedSliderCard({
+  Widget _buildVoiceSection({
     required String title,
-    required double value,
-    required String bandLabel,
-    required ValueChanged<double> onChanged,
+    required bool isMaleSection,
+    required List<InworldTtsVoiceEntry> voices,
+    required String selectedVoiceId,
+    required InworldTtsState state,
+    required double cardHeight,
+    required bool compact,
+    required bool hideSubtitle,
+    required double rowGap,
+    required ValueChanged<InworldTtsVoiceEntry> onSelect,
+    required ValueChanged<InworldTtsVoiceEntry> onCommit,
   }) {
-    final v = value.clamp(0.0, 1.5);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F2FF),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.black54,
-            ),
-          ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: appColor,
-              inactiveTrackColor: Colors.grey[300],
-              thumbColor: appColor,
-              trackHeight: 3,
-              overlayShape: SliderComponentShape.noOverlay,
-            ),
-            child: Slider(
-              min: 0,
-              max: 1.5,
-              divisions: 15,
-              label: v.toStringAsFixed(1),
-              value: v,
-              onChanged: onChanged,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Slow (0)',
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    color: Colors.black45,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  'Normal (1)',
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    color: Colors.black45,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  'Fast (1.5)',
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    color: Colors.black45,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 2),
-          Align(
-            alignment: Alignment.center,
-            child: Text(
-              '${v.toStringAsFixed(1)} · $bandLabel',
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAudioModeSwitch(bool audioOn) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _modeButton(
-            label: 'On',
-            selected: audioOn,
-            onTap: () => unawaited(
-                  context.read<InworldTtsCubit>().setAudioEnabled(true),
+        SizedBox(
+          height: compact ? 16 : 18,
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: compact ? 8 : 10,
+                backgroundColor: isMaleSection
+                    ? const Color(0xFFE5EFFF)
+                    : const Color(0xFFFBE4F6),
+                child: Icon(
+                  isMaleSection ? Icons.man : Icons.woman,
+                  size: compact ? 10 : 12,
+                  color: isMaleSection
+                      ? const Color(0xFF5C89E5)
+                      : const Color(0xFFE26EC7),
                 ),
+              ),
+              SizedBox(width: compact ? 3 : 5),
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  fontSize: compact ? 11.5 : 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF2C2E3A),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _modeButton(
-            label: 'Off',
-            selected: !audioOn,
-            onTap: () => unawaited(
-                  context.read<InworldTtsCubit>().setAudioEnabled(false),
-                ),
+        SizedBox(height: rowGap),
+        for (var i = 0; i < voices.length; i++) ...[
+          SizedBox(
+            height: cardHeight,
+            child: _buildVoiceTile(
+              voice: voices[i],
+              isMaleSection: isMaleSection,
+              selected: selectedVoiceId == voices[i].voiceId,
+              state: state,
+              cardHeight: cardHeight,
+              compact: compact,
+              hideSubtitle: hideSubtitle,
+              onSelect: onSelect,
+              onCommit: onCommit,
+            ),
           ),
-        ),
+          if (i != voices.length - 1) SizedBox(height: rowGap),
+        ],
       ],
     );
   }
 
-  Widget _modeButton({
-    required String label,
+  Widget _buildVoiceTile({
+    required InworldTtsVoiceEntry voice,
+    required bool isMaleSection,
     required bool selected,
-    required VoidCallback onTap,
+    required InworldTtsState state,
+    required double cardHeight,
+    required bool compact,
+    required bool hideSubtitle,
+    required ValueChanged<InworldTtsVoiceEntry> onSelect,
+    required ValueChanged<InworldTtsVoiceEntry> onCommit,
   }) {
+    final isPreviewActive =
+        _isPreviewPlayingFor(state: state, voiceId: voice.voiceId);
+    final isPreviewLoading =
+        _isPreviewLoadingFor(state: state, voiceId: voice.voiceId);
+    final avatarRadius = (cardHeight * 0.26).clamp(8.0, 13.0);
+    final avatarIconSize = (avatarRadius * 1.15).clamp(9.0, 15.0);
+    final titleFont = (cardHeight * 0.27).clamp(10.8, 13.0);
+    final subtitleFont = (cardHeight * 0.22).clamp(9.0, 10.5);
+    final cardPadding = (cardHeight * 0.12).clamp(2.0, 6.0);
+    final trailingButtonSize = (cardHeight * 0.52).clamp(17.0, 24.0);
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+        onTap: () => onSelect(voice),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: EdgeInsets.all(cardPadding),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            color: const Color(0xFFF8F8FC),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: selected ? appColor : const Color(0xFFC5C5C5),
-              width: selected ? 2.5 : 1,
+              color: selected ? appColor : const Color(0xFFE0E2EA),
+              width: selected ? 1.4 : 1,
             ),
-            color: selected
-                ? appColor.withValues(alpha: 0.22)
-                : const Color(0xFFF2F2F2),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: appColor.withValues(alpha: 0.25),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: selected ? const Color(0xFF1A237E) : Colors.black54,
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: avatarRadius,
+                backgroundColor: isMaleSection
+                    ? const Color(0xFFE5EFFF)
+                    : const Color(0xFFFBE4F6),
+                child: Icon(
+                  isMaleSection ? Icons.man : Icons.woman,
+                  size: avatarIconSize,
+                  color: isMaleSection
+                      ? const Color(0xFF5C89E5)
+                      : const Color(0xFFE26EC7),
+                ),
               ),
-            ),
+              SizedBox(width: compact ? 6 : 8),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      voice.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: titleFont,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF222433),
+                      ),
+                    ),
+                    if (!hideSubtitle && !(compact && selected))
+                      Text(
+                        voice.subtitle.isNotEmpty
+                            ? voice.subtitle
+                            : voice.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: subtitleFont,
+                          fontWeight: FontWeight.w500,
+                          height: 1.0,
+                          color: const Color(0xFF676C7D),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  _trailingCircleButton(
+                    icon: isPreviewActive
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    color: appColor,
+                    size: trailingButtonSize,
+                    isLoading: isPreviewLoading,
+                    onTap: state.audioEnabled
+                        ? () => _togglePreview(voice, state)
+                        : null,
+                  ),
+                  if (selected) ...[
+                    SizedBox(width: compact ? 4 : 6),
+                    _trailingCircleButton(
+                      icon: Icons.arrow_forward_rounded,
+                      color: Colors.white,
+                      size: trailingButtonSize,
+                      backgroundColor: appColor,
+                      borderColor: appColor,
+                      onTap: () => onCommit(voice),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildContinueButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: InkWell(
-        onTap: () => Navigator.pop(context),
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF5844E5), Color(0xFF2E9CF8)],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: appColor.withValues(alpha: 0.28),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+  Widget _trailingCircleButton({
+    required IconData icon,
+    required Color color,
+    required double size,
+    Color backgroundColor = const Color(0xFFE9EAF2),
+    Color borderColor = const Color(0xFFD7DAE6),
+    bool isLoading = false,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: backgroundColor,
+          border: Border.all(color: borderColor),
+        ),
+        child: isLoading
+            ? Padding(
+                padding: EdgeInsets.all((size * 0.24).clamp(3.5, 7.0)),
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.8,
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
               )
+            : Icon(icon, color: color, size: (size * 0.56).clamp(10.0, 16.0)),
+      ),
+    );
+  }
+
+  Widget _buildVoiceListsArea({
+    required InworldTtsState state,
+    required String selectedMale,
+    required String selectedFemale,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final activeSelectedVoiceId =
+            _resolveActiveSelectedVoiceId(state, selectedMale, selectedFemale);
+        final showOnlyGenderVoices = !widget.fromStory;
+        final activeGenderVoices =
+            state.isPartnerFemale ? kInworldFemaleVoices : kInworldMaleVoices;
+        final activeGenderTitle =
+            state.isPartnerFemale ? 'Female Voices' : 'Male Voices';
+        final extraStoryCards = widget.fromStory ? 1 : 0;
+        final totalCards = widget.fromStory
+            ? (kInworldMaleVoices.length +
+                kInworldFemaleVoices.length +
+                extraStoryCards)
+            : activeGenderVoices.length;
+        final sectionCount = widget.fromStory ? 3 : 1;
+        final sectionGap = widget.fromStory ? 1.0 : 2.0;
+        const headingAndGapPerSection = 20.0;
+        final cardGapCompact = widget.fromStory ? 1.0 : 2.0;
+
+        final totalCardGaps = widget.fromStory
+            ? (kInworldMaleVoices.length -
+                    1 +
+                    kInworldFemaleVoices.length -
+                    1) *
+                cardGapCompact
+            : (activeGenderVoices.length - 1) * cardGapCompact;
+        final fixedHeight = (sectionGap * (sectionCount - 1)) +
+            (headingAndGapPerSection * sectionCount) +
+            totalCardGaps;
+        final rawCardHeight =
+            (constraints.maxHeight - fixedHeight) / totalCards;
+
+        // Tighten aggressively on small devices to avoid overflow.
+        final cardHeight = rawCardHeight.clamp(24.0, 52.0);
+        final compact = cardHeight <= 44;
+        final hideSubtitle = widget.fromStory ? true : cardHeight <= 46;
+        final commitSelectedVoice = activeSelectedVoiceId;
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
+          child: Column(
+            children: [
+              if (widget.fromStory) ...[
+                _buildVoiceSection(
+                  title: 'Story Voice',
+                  isMaleSection: false,
+                  voices: const [_storySofyEntry],
+                  selectedVoiceId: activeSelectedVoiceId,
+                  state: state,
+                  cardHeight: cardHeight,
+                  compact: compact,
+                  hideSubtitle: hideSubtitle,
+                  rowGap: cardGapCompact,
+                  onSelect: (_) {
+                    unawaited(_stopSofyPreviewIfAny());
+                    unawaited(_selectSofyVoice());
+                  },
+                  onCommit: (_) {
+                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
+                  },
+                ),
+                SizedBox(height: sectionGap),
+              ],
+              if (showOnlyGenderVoices)
+                _buildVoiceSection(
+                  title: activeGenderTitle,
+                  isMaleSection: !state.isPartnerFemale,
+                  voices: activeGenderVoices,
+                  selectedVoiceId: activeSelectedVoiceId,
+                  state: state,
+                  cardHeight: cardHeight,
+                  compact: compact,
+                  hideSubtitle: hideSubtitle,
+                  rowGap: cardGapCompact,
+                  onSelect: (voice) {
+                    unawaited(_stopSofyPreviewIfAny());
+                    if (mounted) {
+                      setState(() {
+                        _isSofySelected = false;
+                        _singleSelectedVoiceId = voice.voiceId;
+                      });
+                    }
+                  },
+                  onCommit: (_) {
+                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
+                  },
+                )
+              else ...[
+                _buildVoiceSection(
+                  title: 'Male Voices',
+                  isMaleSection: true,
+                  voices: kInworldMaleVoices,
+                  selectedVoiceId: activeSelectedVoiceId,
+                  state: state,
+                  cardHeight: cardHeight,
+                  compact: compact,
+                  hideSubtitle: hideSubtitle,
+                  rowGap: cardGapCompact,
+                  onSelect: (voice) {
+                    unawaited(_stopSofyPreviewIfAny());
+                    if (mounted) {
+                      setState(() {
+                        _isSofySelected = false;
+                        _singleSelectedVoiceId = voice.voiceId;
+                      });
+                    }
+                  },
+                  onCommit: (_) {
+                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
+                  },
+                ),
+                SizedBox(height: sectionGap),
+                _buildVoiceSection(
+                  title: 'Female Voices',
+                  isMaleSection: false,
+                  voices: kInworldFemaleVoices,
+                  selectedVoiceId: activeSelectedVoiceId,
+                  state: state,
+                  cardHeight: cardHeight,
+                  compact: compact,
+                  hideSubtitle: hideSubtitle,
+                  rowGap: cardGapCompact,
+                  onSelect: (voice) {
+                    unawaited(_stopSofyPreviewIfAny());
+                    if (mounted) {
+                      setState(() {
+                        _isSofySelected = false;
+                        _singleSelectedVoiceId = voice.voiceId;
+                      });
+                    }
+                  },
+                  onCommit: (_) {
+                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
+                  },
+                ),
+              ],
             ],
           ),
-          child: Center(
-            child: Text(
-              'Continue  \u2192',
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
+        );
+      },
+    );
+  }
+
+  Widget _buildEmotionSlider({
+    required double value,
+    required String label,
+  }) {
+    final v = value.clamp(0.0, 1.5);
+    final sliderPos = _valueToSliderPosition(v);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Emotion',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF2C2E3A),
+            ),
+          ),
+          SizedBox(
+            height: 16,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: appColor,
+                inactiveTrackColor: const Color(0xFFD5D7E3),
+                thumbColor: appColor,
+                trackHeight: 2,
+                overlayShape: SliderComponentShape.noOverlay,
+              ),
+              child: Slider(
+                value: sliderPos,
+                min: 0,
+                max: 1.0,
+                divisions: 100,
+                onChanged: (next) => unawaited(
+                  context.read<InworldTtsCubit>().setTemperatureSlider(
+                        _quantizeSliderValue(_sliderPositionToValue(next)),
+                      ),
+                ),
+              ),
+            ),
+          ),
+          _buildRangeMarkers(),
+          const SizedBox(height: 0),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpeedSlider({
+    required double speedValue,
+    required String speedLabel,
+  }) {
+    final v = speedValue.clamp(0.0, 1.5);
+    final sliderPos = _valueToSliderPosition(v);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Speed',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF2C2E3A),
+            ),
+          ),
+          SizedBox(
+            height: 16,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: appColor,
+                inactiveTrackColor: const Color(0xFFD5D7E3),
+                thumbColor: appColor,
+                trackHeight: 2,
+                overlayShape: SliderComponentShape.noOverlay,
+              ),
+              child: Slider(
+                value: sliderPos,
+                min: 0,
+                max: 1.0,
+                divisions: 100,
+                onChanged: (next) => unawaited(
+                  context.read<InworldTtsCubit>().setSpeedSlider(
+                        _quantizeSliderValue(_sliderPositionToValue(next)),
+                      ),
+                ),
+              ),
+            ),
+          ),
+          _buildRangeMarkers(),
+          const SizedBox(height: 0),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRangeMarkers() {
+    return Row(
+      children: [
+        Text(
+          '0.0x',
+          style: GoogleFonts.inter(
+            fontSize: 9,
+            color: const Color(0xFF7D8191),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          '1.0x',
+          style: GoogleFonts.inter(
+            fontSize: 9,
+            color: const Color(0xFF7D8191),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          '1.5x',
+          style: GoogleFonts.inter(
+            fontSize: 9,
+            color: const Color(0xFF7D8191),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDoneButton() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+      child: SizedBox(
+        width: double.infinity,
+        height: 30,
+        child: InkWell(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(26),
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF7B5DF6), Color(0xFF3A33AF)],
+              ),
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Center(
+              child: Text(
+                'Done',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),

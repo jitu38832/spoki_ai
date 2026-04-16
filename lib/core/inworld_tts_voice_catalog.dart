@@ -27,8 +27,8 @@ const List<InworldTtsVoiceEntry> kInworldMaleVoices = [
     subtitle: 'Deep & Confident',
   ),
   InworldTtsVoiceEntry(
-    voiceId: 'Duncen',
-    displayName: 'Duncen',
+    voiceId: 'Duncan',
+    displayName: 'Duncan',
     subtitle: 'Warm & Steady',
   ),
   InworldTtsVoiceEntry(

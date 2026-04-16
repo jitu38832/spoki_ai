@@ -8,15 +8,14 @@ import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spokiai/model/generatestory.dart';
-import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/socket.dart';
 import 'package:spokiai/view/screens/story_quiz_screen.dart';
+import 'package:spokiai/view/screens/voice_settings.dart';
 import '../utils/preference_manager.dart';
 import '../../model/wordmeaning.dart';
 import '../../viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/colors.dart';
-import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -36,7 +35,7 @@ enum _StoryQuizGenPhase {
 }
 
 class StorydescriptionScreen extends StatefulWidget {
-  GenerateStoryResponse generateStoryResponse = GenerateStoryResponse();
+  final GenerateStoryResponse generateStoryResponse;
 
   StorydescriptionScreen({super.key, required this.generateStoryResponse});
 
@@ -60,6 +59,9 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   double volume = 1.0;
   double pitch = 1.0;
   double rate = 0.5;
+  bool _isStoryTtsPreparing = false;
+  bool _isSofyStorySpeaking = false;
+  bool _cancelSofyStoryPlayback = false;
   Map<String, String> availableLanguages = {};
   String? selectedLanguageCode;
 
@@ -67,8 +69,9 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   void initState() {
     initTts();
     super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _startStoryQuizStatusFlow());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startStoryQuizStatusFlow();
+    });
   }
 
   void _stopStoryQuizPoll() {
@@ -105,8 +108,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       return;
     }
 
-    _lastEmittedRequestId =
-        DateTime.now().microsecondsSinceEpoch.toString();
+    _lastEmittedRequestId = DateTime.now().microsecondsSinceEpoch.toString();
     _storyQuizSocket.emitGetStoryQuizStatus(
       storyId: storyId,
       token: token,
@@ -162,9 +164,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
         setState(() {
           _storyQuizPhase = _StoryQuizGenPhase.ready;
           _preloadedQuizFromSocket = quizMap;
-          _storyQuizHint = quizMap == null
-              ? 'Quiz is ready. Open to load questions.'
-              : null;
+          _storyQuizHint =
+              quizMap == null ? 'Quiz is ready. Open to load questions.' : null;
         });
         _stopStoryQuizPoll();
         break;
@@ -178,8 +179,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       case 'failed':
         setState(() {
           _storyQuizPhase = _StoryQuizGenPhase.failed;
-          _storyQuizHint =
-              d['error']?.toString() ?? 'Quiz generation failed.';
+          _storyQuizHint = d['error']?.toString() ?? 'Quiz generation failed.';
           _preloadedQuizFromSocket = null;
         });
         _stopStoryQuizPoll();
@@ -250,8 +250,110 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     }
   }
 
-  bool get _storyQuizYesEnabled =>
-      _storyQuizPhase == _StoryQuizGenPhase.ready;
+  bool get _storyQuizYesEnabled => _storyQuizPhase == _StoryQuizGenPhase.ready;
+
+  Widget _buildStoryActionsRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: textInter(
+            text:
+                "Words: ${widget.generateStoryResponse.data?.metadata?.wordCount.toString() ?? ""}",
+            fontSize: 13,
+            color: Colors.grey[700],
+          ),
+        ),
+        Row(
+          children: [
+            BlocBuilder<InworldTtsCubit, InworldTtsState>(
+              buildWhen: (a, b) =>
+                  a.status != b.status || a.playbackId != b.playbackId,
+              builder: (context, tts) {
+                final inworldStoryActive = tts.playbackId == 'story' &&
+                    (tts.status == InworldTtsStatus.loading ||
+                        tts.status == InworldTtsStatus.playing);
+                final storyTtsActive =
+                    _isSofyStorySpeaking || inworldStoryActive;
+                return IconButton(
+                  icon: _isStoryTtsPreparing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          storyTtsActive
+                              ? Icons.pause_rounded
+                              : Icons.volume_up_outlined,
+                        ),
+                  onPressed: () async {
+                    if (_isStoryTtsPreparing || storyTtsActive) {
+                      await stop();
+                      return;
+                    }
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const VoiceSettingsScreen(fromStory: true),
+                      ),
+                    );
+                    if (!mounted || result is! Map) return;
+                    final useSofy = result['useSofy'] == true;
+                    final shouldPlay = result['playStoryTts'] == true;
+                    final selectedVoiceId =
+                        result['selectedVoiceId']?.toString();
+                    if (shouldPlay) {
+                      await speak(
+                        useSofy: useSofy,
+                        selectedVoiceId: selectedVoiceId,
+                      );
+                    }
+                  },
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.download_outlined),
+              onPressed: () {
+                final String title = widget
+                        .generateStoryResponse.data?.metadata?.title
+                        .toString() ??
+                    "";
+                final String description =
+                    widget.generateStoryResponse.data?.story.toString() ?? "";
+
+                downloadPdfExternal(title, description);
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              onPressed: () {
+                final String title = widget
+                        .generateStoryResponse.data?.metadata?.title
+                        .toString() ??
+                    "";
+                final String description =
+                    widget.generateStoryResponse.data?.story.toString() ?? "";
+
+                Share.share(
+                  "$title\n\n$description",
+                  subject: title,
+                );
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Future<void> initTts() async {
     flutterTts = FlutterTts();
 
@@ -264,21 +366,55 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     await flutterTts.setVolume(volume);
     await flutterTts.setSpeechRate(rate);
     await flutterTts.setPitch(pitch);
+    await flutterTts.awaitSpeakCompletion(true);
 
-    // Callbacks
-    flutterTts.setStartHandler(() {});
-    flutterTts.setCompletionHandler(() {});
-    flutterTts.setCancelHandler(() {});
-    flutterTts.setErrorHandler((msg) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $msg")));
-    });
+    _attachFlutterTtsHandlers();
 
     // Load languages safely without duplicates
     await loadLanguages();
 
     setState(() {});
+  }
+
+  void _attachFlutterTtsHandlers() {
+    flutterTts.setStartHandler(() {
+      if (!mounted) return;
+      setState(() {
+        _isStoryTtsPreparing = false;
+        _isSofyStorySpeaking = true;
+      });
+    });
+    flutterTts.setCompletionHandler(() {
+      if (!mounted) return;
+      setState(() => _isSofyStorySpeaking = false);
+    });
+    flutterTts.setCancelHandler(() {
+      if (!mounted) return;
+      setState(() => _isSofyStorySpeaking = false);
+    });
+    flutterTts.setErrorHandler((msg) {
+      if (mounted) {
+        setState(() {
+          _isSofyStorySpeaking = false;
+          _isStoryTtsPreparing = false;
+        });
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $msg")));
+    });
+  }
+
+  Future<void> _resetFlutterTtsEngineForSofy() async {
+    try {
+      await flutterTts.stop();
+    } catch (_) {}
+    flutterTts = FlutterTts();
+    if (Platform.isAndroid) {
+      await flutterTts.setEngine("com.google.android.tts");
+    }
+    await flutterTts.awaitSpeakCompletion(true);
+    _attachFlutterTtsHandlers();
   }
 
   Future<void> loadLanguages() async {
@@ -331,7 +467,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       }
 
       selectedLanguageCode ??= availableLanguages.keys.firstWhere(
-            (k) => k.startsWith("en"),
+        (k) => k.startsWith("en"),
         orElse: () => availableLanguages.keys.first,
       );
 
@@ -342,18 +478,151 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     }
   }
 
-  Future<void> speak() async {
+  Future<void> speak({
+    bool useSofy = false,
+    String? selectedVoiceId,
+  }) async {
     final story = widget.generateStoryResponse.data?.story.toString() ?? '';
     if (story.isEmpty || !mounted) return;
     final cubit = context.read<InworldTtsCubit>();
-    if (!cubit.state.audioEnabled) return;
-    await cubit.speak(story, playbackId: 'story');
+    if (!cubit.state.audioEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Audio is turned off in voice settings.')),
+      );
+      return;
+    }
+    setState(() {
+      _isStoryTtsPreparing = true;
+      _isSofyStorySpeaking = false;
+      _cancelSofyStoryPlayback = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Generating voice...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+    try {
+      await stop(keepPreparing: true);
+      if (useSofy) {
+        // Give the local TTS engine a brief moment after stop() to reset.
+        await Future.delayed(const Duration(milliseconds: 120));
+        await _speakStoryWithFlutterTts(story);
+      } else {
+        await cubit.speak(
+          story,
+          playbackId: 'story',
+          voiceIdForPreview: selectedVoiceId,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isStoryTtsPreparing = false);
+      }
+    }
   }
 
-  Future<void> stop() async {
+  Future<void> stop({bool keepPreparing = false}) async {
+    _cancelSofyStoryPlayback = true;
+    await flutterTts.stop();
     await context.read<InworldTtsCubit>().stop();
+    if (mounted) {
+      setState(() {
+        _isSofyStorySpeaking = false;
+        if (!keepPreparing) {
+          _isStoryTtsPreparing = false;
+        }
+      });
+    }
   }
 
+  Future<int> _resolveFlutterTtsMaxInputLength() async {
+    try {
+      final dynamic maxLen = await flutterTts.getMaxSpeechInputLength;
+      if (maxLen is int && maxLen > 0) return maxLen;
+      if (maxLen is String) {
+        final parsed = int.tryParse(maxLen);
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    } catch (_) {
+      // Fallback used below.
+    }
+    return 2500;
+  }
+
+  List<String> _splitStoryForFlutterTts(String text, int chunkLimit) {
+    final cleaned = text.replaceAll('\n', ' ').trim();
+    if (cleaned.isEmpty) return const [];
+    final words = cleaned
+        .split(RegExp(r'\s+'))
+        .where((w) => w.trim().isNotEmpty)
+        .toList();
+    final chunks = <String>[];
+    var current = StringBuffer();
+    for (final word in words) {
+      final w = word.trim();
+      final nextLen =
+          current.isEmpty ? w.length : current.length + 1 + w.length;
+      if (nextLen > chunkLimit && current.isNotEmpty) {
+        chunks.add(current.toString());
+        current = StringBuffer(w);
+      } else {
+        if (current.isNotEmpty) current.write(' ');
+        current.write(w);
+      }
+    }
+    if (current.isNotEmpty) chunks.add(current.toString());
+    return chunks.isEmpty ? [cleaned] : chunks;
+  }
+
+  Future<void> _speakStoryWithFlutterTts(String story) async {
+    _cancelSofyStoryPlayback = false;
+    try {
+      await _resetFlutterTtsEngineForSofy();
+      await flutterTts.setLanguage(selectedLanguageCode ?? 'en-US');
+      await flutterTts.setVolume(volume);
+      await flutterTts.setSpeechRate(rate);
+      await flutterTts.setPitch(pitch);
+      if (Platform.isAndroid) {
+        try {
+          // Start a fresh utterance queue each time.
+          await flutterTts.setQueueMode(0);
+        } catch (_) {}
+      }
+
+      final cleanStory = story.replaceAll('\n', ' ').trim();
+      final maxInput = await _resolveFlutterTtsMaxInputLength();
+      if (mounted) {
+        setState(() {
+          _isStoryTtsPreparing = false;
+          _isSofyStorySpeaking = true;
+        });
+      }
+
+      // Prefer single utterance to avoid any chunk boundary skipping.
+      if (cleanStory.length <= maxInput) {
+        if (!_cancelSofyStoryPlayback) {
+          await flutterTts.speak(cleanStory);
+        }
+      } else {
+        final safeChunkLimit = maxInput > 120 ? maxInput - 20 : maxInput;
+        final chunks = _splitStoryForFlutterTts(cleanStory, safeChunkLimit);
+        for (final chunk in chunks) {
+          if (_cancelSofyStoryPlayback || !mounted) break;
+          await flutterTts.speak(chunk);
+          if (_cancelSofyStoryPlayback || !mounted) break;
+          await Future.delayed(const Duration(milliseconds: 20));
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSofyStorySpeaking = false;
+          _isStoryTtsPreparing = false;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -369,6 +638,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     flutterTts.stop();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -405,7 +675,9 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                   children: [
                     // Title
                     textInter(
-                      text: widget.generateStoryResponse.data?.metadata?.title.toString()??"",
+                      text: widget.generateStoryResponse.data?.metadata?.title
+                              .toString() ??
+                          "",
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF6A1B9A),
@@ -457,10 +729,12 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             // Handle Success
                             if (state.status == AppStatus.wordMeaningSuccess) {
                               // Close loading dialog if open
-                              if (Navigator.canPop(context)) Navigator.pop(context);
+                              if (Navigator.canPop(context))
+                                Navigator.pop(context);
 
-                              WordMeaningResponse wordMeaningResponse =
-                              state.responseData?.response as WordMeaningResponse;
+                              WordMeaningResponse wordMeaningResponse = state
+                                  .responseData
+                                  ?.response as WordMeaningResponse;
 
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 showDialog(
@@ -468,31 +742,43 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                   builder: (_) => AlertDialog(
                                     title: Text(
                                       "Meaning of '${wordMeaningResponse.data?.word ?? 'Word'}'",
-                                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                      style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold),
                                     ),
                                     content: SizedBox(
-                                      width: double.maxFinite, // Crucial for proper layout in dialog
+                                      width: double
+                                          .maxFinite, // Crucial for proper layout in dialog
                                       height: 350, // Optional: limit height
                                       child: SingleChildScrollView(
                                         physics: const BouncingScrollPhysics(),
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           mainAxisSize: MainAxisSize.min,
                                           children: List.generate(
-                                            wordMeaningResponse.data?.meanings?.length ?? 0,
-                                                (index) {
-                                              final meaning = wordMeaningResponse.data!.meanings![index];
+                                            wordMeaningResponse
+                                                    .data?.meanings?.length ??
+                                                0,
+                                            (index) {
+                                              final meaning =
+                                                  wordMeaningResponse
+                                                      .data!.meanings![index];
                                               return Padding(
-                                                padding: const EdgeInsets.only(bottom: 16.0),
+                                                padding: const EdgeInsets.only(
+                                                    bottom: 16.0),
                                                 child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
                                                   children: [
                                                     // Part of Speech
                                                     Text(
-                                                      meaning.partOfSpeech ?? "",
+                                                      meaning.partOfSpeech ??
+                                                          "",
                                                       style: const TextStyle(
                                                         fontSize: 17,
-                                                        fontWeight: FontWeight.bold,
+                                                        fontWeight:
+                                                            FontWeight.bold,
                                                         color: Colors.indigo,
                                                       ),
                                                     ),
@@ -506,14 +792,21 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                                       ),
                                                     ),
                                                     // Optional: Example
-                                                    if (meaning.example != null && meaning.example!.isNotEmpty)
+                                                    if (meaning.example !=
+                                                            null &&
+                                                        meaning.example!
+                                                            .isNotEmpty)
                                                       Padding(
-                                                        padding: const EdgeInsets.only(top: 8),
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .only(top: 8),
                                                         child: Text(
                                                           "Example: ${meaning.example}",
-                                                          style: const TextStyle(
+                                                          style:
+                                                              const TextStyle(
                                                             fontSize: 15,
-                                                            fontStyle: FontStyle.italic,
+                                                            fontStyle: FontStyle
+                                                                .italic,
                                                             color: Colors.grey,
                                                           ),
                                                         ),
@@ -540,7 +833,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
 
                             // Handle Error
                             if (state.status == AppStatus.wordMeaningError) {
-                              if (Navigator.canPop(context)) Navigator.pop(context);
+                              if (Navigator.canPop(context))
+                                Navigator.pop(context);
 
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 showDialog(
@@ -548,7 +842,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                   builder: (_) => AlertDialog(
                                     title: const Text("Error"),
                                     content: Text(
-                                      state.errorData?.message ?? "Failed to fetch meaning.",
+                                      state.errorData?.message ??
+                                          "Failed to fetch meaning.",
                                     ),
                                     actions: [
                                       TextButton(
@@ -577,7 +872,9 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             }
 
                             return SelectableText(
-                              widget.generateStoryResponse.data?.story.toString() ?? "",
+                              widget.generateStoryResponse.data?.story
+                                      .toString() ??
+                                  "",
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w400,
@@ -585,19 +882,25 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                 color: Colors.black87,
                               ),
                               textAlign: TextAlign.start,
-                              onSelectionChanged: (TextSelection selection, SelectionChangedCause? cause) {
+                              onSelectionChanged: (TextSelection selection,
+                                  SelectionChangedCause? cause) {
                                 if (cause == SelectionChangedCause.longPress ||
                                     cause == SelectionChangedCause.drag) {
-                                  if (selection.isValid && selection.start != selection.end) {
-                                    final selectedText = widget.generateStoryResponse.data?.story
+                                  if (selection.isValid &&
+                                      selection.start != selection.end) {
+                                    final selectedText = widget
+                                        .generateStoryResponse.data?.story
                                         .toString()
-                                        .substring(selection.start, selection.end)
+                                        .substring(
+                                            selection.start, selection.end)
                                         .trim();
 
                                     if (selectedText.toString().isNotEmpty) {
-                                      debugPrint("Selected text: $selectedText");
+                                      debugPrint(
+                                          "Selected text: $selectedText");
                                       BlocProvider.of<AppCubit>(context)
-                                          .wordMeaning("", selectedText.toString());
+                                          .wordMeaning(
+                                              "", selectedText.toString());
                                     }
                                   }
                                 }
@@ -613,94 +916,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                         // ),
                         const SizedBox(height: 30),
 
-                        // Word Count + Icons (Still visible while scrolling)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: textInter(
-                                text: "Words: ${widget.generateStoryResponse.data?.metadata?.wordCount.toString()??""}",
-                                fontSize: 13,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                BlocBuilder<InworldTtsCubit, InworldTtsState>(
-                                  buildWhen: (a, b) =>
-                                      a.status != b.status ||
-                                      a.playbackId != b.playbackId ||
-                                      a.audioEnabled != b.audioEnabled,
-                                  builder: (context, tts) {
-                                    if (!tts.audioEnabled) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    final storyActive = tts.playbackId == 'story' &&
-                                        (tts.status == InworldTtsStatus.loading ||
-                                            tts.status == InworldTtsStatus.playing);
-                                    return IconButton(
-                                      icon: Icon(
-                                        storyActive
-                                            ? Icons.stop
-                                            : Icons.volume_up_outlined,
-                                      ),
-                                      onPressed: () {
-                                        if (storyActive) {
-                                          stop();
-                                        } else {
-                                          speak();
-                                        }
-                                      },
-                                    );
-                                  },
-                                ),
-                                IconButton(
-                                    icon:
-                                    const Icon(Icons.download_outlined),
-                                    onPressed: () {
-                                      final String title =
-                                          widget.generateStoryResponse
-                                              .data?.metadata?.title
-                                              .toString() ??
-                                              "";
-                                      final String description =
-                                          widget.generateStoryResponse
-                                              .data?.story
-                                              .toString() ??
-                                              "";
-
-                                      downloadPdfExternal(title, description);
-
-                                    }),
-                                IconButton(
-                                    icon: const Icon(Icons.share_outlined),
-                                    onPressed: () {
-                                      final String title =
-                                          widget.generateStoryResponse
-                                              .data?.metadata?.title
-                                              .toString() ??
-                                              "";
-                                      final String description =
-                                          widget.generateStoryResponse
-                                              .data?.story
-                                              .toString() ??
-                                              "";
-
-                                      Share.share(
-                                        "$title\n\n$description",
-                                        subject: title, // optional
-                                      );
-                                    }),
-                              ],
-                            ),
-                          ],
-                        ),
+                        _buildStoryActionsRow(),
                         const SizedBox(height: 20),
                       ],
                     ),
@@ -708,108 +924,127 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                 ),
               ),
 
-              const SizedBox(height: 100), // Space for bottom floating card
+              const SizedBox(height: 150), // Space for bottom quiz card
             ],
           ),
 
           // Bottom Fixed Popup Card
           Align(
             alignment: Alignment.bottomCenter,
-            child: Container(
-              margin: const EdgeInsets.all(20),
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
-                    blurRadius: 20,
-                    offset: const Offset(0, -5),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  textInter(
-                    text: "Have you finished your story?",
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                  if (_storyQuizHint != null &&
-                      _storyQuizHint!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Align(
-                          alignment: Alignment.center,
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              _storyQuizHint!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey.shade700,
-                                height: 1.35,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 20,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.12),
+                            blurRadius: 20,
+                            offset: const Offset(0, -5),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          textInter(
+                            text: "Have you finished your story?",
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                          if (_storyQuizHint != null &&
+                              _storyQuizHint!.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Align(
+                                  alignment: Alignment.center,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Text(
+                                      _storyQuizHint!,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade700,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _storyQuizYesEnabled
+                                    ? appColor
+                                    : Colors.grey.shade400,
+                                disabledBackgroundColor: Colors.grey.shade400,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: _storyQuizYesEnabled ? 3 : 0,
+                              ),
+                              onPressed: _storyQuizYesEnabled
+                                  ? () {
+                                      final quizDetails = <String, dynamic>{
+                                        "storyId": widget
+                                            .generateStoryResponse.data?.id
+                                            .toString(),
+                                        "difficulty": widget
+                                                .generateStoryResponse
+                                                .data
+                                                ?.metadata
+                                                ?.learningLevel
+                                                .toString() ??
+                                            "",
+                                        "numberOfQuestions": 5,
+                                      };
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => StoryQuizScreen(
+                                            quizDetails: quizDetails,
+                                            preloadedQuizData:
+                                                _preloadedQuizFromSocket,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  : null,
+                              child: textInter(
+                                text: "Yes",
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            _storyQuizYesEnabled ? appColor : Colors.grey.shade400,
-                        disabledBackgroundColor: Colors.grey.shade400,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: _storyQuizYesEnabled ? 3 : 0,
-                      ),
-                      onPressed: _storyQuizYesEnabled
-                          ? () {
-                              final quizDetails = <String, dynamic>{
-                                "storyId": widget
-                                    .generateStoryResponse.data?.id
-                                    .toString(),
-                                "difficulty": widget.generateStoryResponse
-                                        .data?.metadata?.learningLevel
-                                        .toString() ??
-                                    "",
-                                "numberOfQuestions": 5,
-                              };
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => StoryQuizScreen(
-                                    quizDetails: quizDetails,
-                                    preloadedQuizData:
-                                        _preloadedQuizFromSocket,
-                                  ),
-                                ),
-                              );
-                            }
-                          : null,
-                      child: textInter(
-                        text: "Yes",
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -819,8 +1054,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   }
 
   Future<void> downloadPdfExternal(String title, String description) async {
-    final fontData =
-    await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+    final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
     final ttf = pw.Font.ttf(fontData);
 
     final safeTitle = title
@@ -859,8 +1093,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     final downloadsDir = await getExternalStorageDirectory();
     if (downloadsDir == null) return;
 
-    final externalPath =
-        downloadsDir.path.split('Android')[0] + 'Download';
+    final externalPath = downloadsDir.path.split('Android')[0] + 'Download';
 
     final folder = Directory('$externalPath/Spoki AI');
     if (!await folder.exists()) {
@@ -873,5 +1106,4 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     print('Saved to: ${file.path}');
     showToast(context: context, message: "Pdf Saved.");
   }
-
 }
