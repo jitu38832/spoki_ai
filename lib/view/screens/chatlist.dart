@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/view/screens/chat.dart';
+import 'package:spokiai/view/screens/dashboard.dart';
 import '../utils/colors.dart';
 import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
@@ -137,7 +138,12 @@ class _ChatlistState extends State<Chatlist> {
                     color: Colors.grey.shade800,
                     size: 20,
                   ),
-                  onPressed: () => Navigator.maybePop(context),
+                  onPressed: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DashboardScreen(initialTabIndex: 0),
+                    ),
+                  ),
                 ),
               ),
               Expanded(

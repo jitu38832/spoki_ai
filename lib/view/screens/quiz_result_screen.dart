@@ -7,14 +7,12 @@ import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/custom_widgets.dart';
 import '../utils/preference_manager.dart';
-import 'home.dart';
-import 'story_quiz_screen.dart';
 
 class QuizResultScreen extends StatefulWidget {
   final int score;
   final int totalQuestions;
-  String quizResult = "";
-  String id = "";
+  final String quizResult;
+  final String id;
 
   QuizResultScreen({
     super.key,
@@ -33,10 +31,15 @@ class _QuizResultScreenState extends State<QuizResultScreen> {
 
   SubmitQuizResponse submitQuizResponse = SubmitQuizResponse();
 
-  bool _isCurrentScore(int scoreValue) {
-    // Normalize to 5-point scale for display
-    final normalizedScore = (widget.score * 5 / widget.totalQuestions).round();
-    return normalizedScore == scoreValue;
+  void _goToHome() {
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const DashboardScreen(initialTabIndex: 0),
+      ),
+      (route) => false,
+    );
   }
 
   @override
@@ -54,7 +57,7 @@ class _QuizResultScreenState extends State<QuizResultScreen> {
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        Navigator.pop(context, true); // SAME as AppBar back
+        _goToHome();
         return false; // prevent default pop
       },
       child: Scaffold(
@@ -62,9 +65,7 @@ class _QuizResultScreenState extends State<QuizResultScreen> {
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              Navigator.pop(context, true);
-            },
+            onPressed: _goToHome,
           ),
           title: Row(
             children: [
@@ -250,33 +251,4 @@ class _QuizResultScreenState extends State<QuizResultScreen> {
     );
   }
 
-  Widget _buildScoringLegend() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        _buildScoreItem(
-            "0/5", "Time To Review! Great Attempt.", _isCurrentScore(0)),
-        const SizedBox(height: 12),
-        _buildScoreItem("1/5", "Promising Start!", _isCurrentScore(1)),
-        const SizedBox(height: 12),
-        _buildScoreItem("2/5", "Solid Effort!", _isCurrentScore(2)),
-        const SizedBox(height: 12),
-        _buildScoreItem("3/5", "Great Job!", _isCurrentScore(3)),
-        const SizedBox(height: 12),
-        _buildScoreItem("4/5", "Excellent!", _isCurrentScore(4)),
-        const SizedBox(height: 12),
-        _buildScoreItem("5/5", "You Crushed it!", _isCurrentScore(5)),
-      ],
-    );
-  }
-
-  Widget _buildScoreItem(String score, String message, bool isCurrent) {
-    return textInter(
-      text: "$score= $message",
-      fontSize: 14,
-      fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
-      color: isCurrent ? Colors.black : Colors.grey[600],
-    );
-  }
 }

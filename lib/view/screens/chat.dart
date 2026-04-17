@@ -1674,7 +1674,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               color: Colors.amber[800], size: 20),
                           const SizedBox(width: 6),
                           Text(
-                            "Quick reply",
+                            "Say this",
                             style: TextStyle(
                               color: Colors.amber[900],
                               fontWeight: FontWeight.w600,
@@ -1864,7 +1864,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         }
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   Widget _buildMessageBubble(ChatMessage message) {

@@ -24,6 +24,11 @@ class VoiceSettingsScreen extends StatefulWidget {
 }
 
 class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
+  static const double _sliderMinValue = 0.8;
+  static const double _sliderMaxValue = 1.2;
+  static const double _sliderStep = 0.1;
+  static const double _emotionMinValue = 0.0;
+  static const double _emotionMaxValue = 1.5;
   static const String _previewPlaybackId = '__voice_preview__';
   static const String _storySofyLocalVoiceId = '__sofy_local_tts__';
   static const String _selectedVoicePrefKey =
@@ -109,7 +114,12 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   }
 
   double _valueToSliderPosition(double value) {
-    final v = value.clamp(0.0, 1.5);
+    final v = value.clamp(_sliderMinValue, _sliderMaxValue);
+    return (v - _sliderMinValue) / (_sliderMaxValue - _sliderMinValue);
+  }
+
+  double _emotionValueToSliderPosition(double value) {
+    final v = value.clamp(_emotionMinValue, _emotionMaxValue);
     if (v <= 1.0) {
       // Map 0..1 into first half of the bar.
       return v / 2.0;
@@ -120,6 +130,11 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
   double _sliderPositionToValue(double position) {
     final p = position.clamp(0.0, 1.0);
+    return _sliderMinValue + (p * (_sliderMaxValue - _sliderMinValue));
+  }
+
+  double _emotionSliderPositionToValue(double position) {
+    final p = position.clamp(0.0, 1.0);
     if (p <= 0.5) {
       return p * 2.0;
     }
@@ -127,7 +142,15 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   }
 
   double _quantizeSliderValue(double value) {
-    final v = value.clamp(0.0, 1.5);
+    final v = value.clamp(_sliderMinValue, _sliderMaxValue);
+    final snapped =
+        ((v - _sliderMinValue) / _sliderStep).round() * _sliderStep +
+            _sliderMinValue;
+    return snapped.clamp(_sliderMinValue, _sliderMaxValue);
+  }
+
+  double _quantizeEmotionSliderValue(double value) {
+    final v = value.clamp(_emotionMinValue, _emotionMaxValue);
     if (v <= 1.0) {
       // 0, 0.25, 0.5, 0.75, 1
       return (v / 0.25).round() * 0.25;
@@ -827,8 +850,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     required double value,
     required String label,
   }) {
-    final v = value.clamp(0.0, 1.5);
-    final sliderPos = _valueToSliderPosition(v);
+    final v = value.clamp(_emotionMinValue, _emotionMaxValue);
+    final sliderPos = _emotionValueToSliderPosition(v);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
       child: Column(
@@ -859,13 +882,19 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 divisions: 100,
                 onChanged: (next) => unawaited(
                   context.read<InworldTtsCubit>().setTemperatureSlider(
-                        _quantizeSliderValue(_sliderPositionToValue(next)),
+                        _quantizeEmotionSliderValue(
+                          _emotionSliderPositionToValue(next),
+                        ),
                       ),
                 ),
               ),
             ),
           ),
-          _buildRangeMarkers(),
+          _buildRangeMarkers(
+            minText: '0.0x',
+            midText: '1.0x',
+            maxText: '1.5x',
+          ),
           const SizedBox(height: 0),
         ],
       ),
@@ -876,7 +905,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     required double speedValue,
     required String speedLabel,
   }) {
-    final v = speedValue.clamp(0.0, 1.5);
+    final v = speedValue.clamp(_sliderMinValue, _sliderMaxValue);
     final sliderPos = _valueToSliderPosition(v);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
@@ -914,18 +943,26 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
               ),
             ),
           ),
-          _buildRangeMarkers(),
+          _buildRangeMarkers(
+            minText: '0.8x',
+            midText: '1.0x',
+            maxText: '1.2x',
+          ),
           const SizedBox(height: 0),
         ],
       ),
     );
   }
 
-  Widget _buildRangeMarkers() {
+  Widget _buildRangeMarkers({
+    required String minText,
+    required String midText,
+    required String maxText,
+  }) {
     return Row(
       children: [
         Text(
-          '0.0x',
+          minText,
           style: GoogleFonts.inter(
             fontSize: 9,
             color: const Color(0xFF7D8191),
@@ -934,7 +971,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         ),
         const Spacer(),
         Text(
-          '1.0x',
+          midText,
           style: GoogleFonts.inter(
             fontSize: 9,
             color: const Color(0xFF7D8191),
@@ -943,7 +980,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         ),
         const Spacer(),
         Text(
-          '1.5x',
+          maxText,
           style: GoogleFonts.inter(
             fontSize: 9,
             color: const Color(0xFF7D8191),

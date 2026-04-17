@@ -22,7 +22,7 @@ class SocketService {
 
     socket = IO.io(
       'ws://3.109.110.211',
-      // 'ws://192.168.1.7:9799',
+      // 'ws://192.168.1.4:9799',
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableAutoConnect()

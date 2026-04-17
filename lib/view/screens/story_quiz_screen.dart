@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/quiz_result_screen.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
@@ -12,7 +11,7 @@ import '../utils/custom_widgets.dart';
 import '../utils/preference_manager.dart';
 
 class StoryQuizScreen extends StatefulWidget {
-  Map<String, dynamic> quizDetails = {};
+  final Map<String, dynamic> quizDetails;
 
   /// When set (e.g. from Socket `storyQuizStatus` `data.quiz`), skips `quiz/generate` and uses this as `QuizQuesResponse.data`.
   final Map<String, dynamic>? preloadedQuizData;
@@ -41,6 +40,17 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
 
   QuizQuesResponse quesResponse = QuizQuesResponse();
   String token = "";
+
+  void _goToHome() {
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const DashboardScreen(initialTabIndex: 0),
+      ),
+      (route) => false,
+    );
+  }
 
   @override
   void initState() {
@@ -196,7 +206,13 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _goToHome();
+      },
+      child: Scaffold(
       backgroundColor: Colors.white,
       bottomNavigationBar:  Padding(
         padding: const EdgeInsets.all(8.0),
@@ -283,7 +299,7 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          onPressed: _goToHome,
         ),
         title: Row(
           children: [
@@ -508,6 +524,7 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 }
