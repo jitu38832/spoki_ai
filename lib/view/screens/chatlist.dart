@@ -20,13 +20,13 @@ class Chatlist extends StatefulWidget {
 class _ChatlistState extends State<Chatlist> {
   static const String _kProfileSpokenLanguage = 'profile_spoken_language';
 
-  // Mockup gradients
-  static const Color _headerPink = Color(0xFFD8449E);
-  static const Color _headerBlue = Color(0xFF4E54C8);
-  static const Color _greenStart = Color(0xFF6CB663);
-  static const Color _greenEnd = Color(0xFF8BC34A);
-  static const Color _ctaBlue = Color(0xFF4E54C8);
-  static const Color _ctaPurple = Color(0xFF7B61FF);
+  // Brand gradient stops (sourced from the Spoki logo).
+  static const Color _headerPink = Color(0xFF6D3BBF); // primary brand purple
+  static const Color _headerBlue = Color(0xFF6D3BBF); // deep violet
+  static const Color _greenStart = Color(0xFF20C5A8); // logo mint
+  static const Color _greenEnd = Color(0xFF139E86); // mint deep
+  static const Color _ctaBlue = Color(0xFF6D3BBF); // app purple
+  static const Color _ctaPurple = Color(0xFF20C5A8); // logo mint accent
 
   String _selectedGender = 'Male';
   String? _selectedImagePath;
@@ -116,34 +116,60 @@ class _ChatlistState extends State<Chatlist> {
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFF5F0FF),
-              Color(0xFFEDE7F6),
-              Color(0xFFE8E0F5),
-            ],
-          ),
+        decoration: BoxDecoration(
+          gradient: backgroundSheetGradient,
         ),
         child: SafeArea(
           child: Column(
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.grey.shade800,
-                    size: 20,
-                  ),
-                  onPressed: () => Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const DashboardScreen(initialTabIndex: 0),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Row(
+                  children: [
+                    Material(
+                      color: Colors.white,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const DashboardScreen(initialTabIndex: 0),
+                          ),
+                        ),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: surfaceMuted),
+                          ),
+                          child: Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            color: textPrimary,
+                            size: 16,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    const Spacer(),
+                    Row(children: [
+                      SpokiLogoMark(size: 32),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Spoki AI",
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: textPrimary,
+                        ),
+                      ),
+                    ]),
+                    const Spacer(),
+                    const SizedBox(width: 42),
+                  ],
                 ),
               ),
               Expanded(

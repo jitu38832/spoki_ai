@@ -21,6 +21,8 @@ class InworldTtsConfig {
 
   static const String defaultVoiceId = 'Jason';
   static const String defaultModelId = 'inworld-tts-1.5-max';
+  static const String chatModelId = defaultModelId;
+  static const String storyModelId = 'inworld-tts-1.5-mini';
   static const int maxTextLength = 4000;
 
   static const String _compileTimeKey = String.fromEnvironment(

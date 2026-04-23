@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/splashscreen.dart';
 import 'package:spokiai/view/screens/story_quiz_screen.dart';
+import 'package:spokiai/view/utils/app_theme.dart';
 import 'package:spokiai/view/utils/firebase_options.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/data/local/inworld_tts_preferences.dart';
@@ -70,11 +71,10 @@ class InitApp extends StatelessWidget {
           child: MaterialApp(
             navigatorKey: navigatorKey,
             debugShowCheckedModeBanner: false,
-            theme: ThemeData.light(),
-            darkTheme: ThemeData.light(),
+            theme: AppTheme.light,
+            darkTheme: AppTheme.light,
             title: 'Spoki AI',
-            home:   Splashscreen()
-            // home: snapshot.data! ? const HistoryScreen() : const LoginScreen(),
+            home: const Splashscreen(),
           ),
         );
       },

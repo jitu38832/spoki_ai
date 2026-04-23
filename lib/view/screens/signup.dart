@@ -1,7 +1,7 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../model/getprofile.dart';
 import '../../model/signup.dart';
@@ -9,7 +9,6 @@ import '../../viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/colors.dart';
 import '../utils/constants.dart';
-import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
 import '../utils/preference_manager.dart';
 import 'dashboard.dart';
@@ -34,227 +33,202 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
     SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
-        statusBarColor: isDarkMode ? Colors.black : Colors.white,
-        statusBarIconBrightness:
-            isDarkMode ? Brightness.light : Brightness.dark,
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
       ),
     );
 
-    return SafeArea(
-      child: Scaffold(
-        backgroundColor: isDarkMode ? Colors.black : Colors.white,
-        body: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: SingleChildScrollView(
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(height: MediaQuery.of(context).size.height * 0.08),
-                  textRoboto(
-                      text: "Login",
-                      color: const Color(0xff6B6B6B),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 20),
-
-                  SpaceWidget(height: 20),
-
-                  TextFieldWidget(
-                    title: 'Email Id',
-                    controller: emailController,
-                    textFieldBorderColor: textFieldBorderColor,
-                    textInputType: TextInputType.emailAddress,
-                    textColor: isDarkMode ? Colors.white : Colors.black,
-                    hint: 'Enter Email Id',
-                    maxLines: 1,
-                    hintColor: Theme.of(context).colorScheme.secondary,
-                    context: context,
-                  ),
-                  SpaceWidget(height: 20),
-
-                  TextFieldWidget(
-                    title: "Password",
-                    obsecure: _obscurePassword,
-                    controller: passwordController,
-                    textFieldBorderColor: textFieldBorderColor,
-                    textInputType: TextInputType.visiblePassword,
-                    textColor: isDarkMode ? Colors.white : Colors.black,
-                    hint: 'Enter Password',
-                    maxLines: 1,
-                    hintColor: Theme.of(context).colorScheme.secondary,
-                    context: context,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        color: isDarkMode ? Colors.grey : Colors.grey[600],
+    return Scaffold(
+      backgroundColor: surfaceBg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 24),
+              Center(
+                child: Column(
+                  children: [
+                    SpokiLogoMark(size: 72),
+                    const SizedBox(height: 18),
+                    Text(
+                      "Welcome back",
+                      style: GoogleFonts.inter(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: textPrimary,
+                        height: 1.2,
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Sign in to keep learning with Spoki AI",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 36),
+              SectionCard(
+                padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextFieldWidget(
+                      title: 'Email Id',
+                      controller: emailController,
+                      textFieldBorderColor: textFieldBorderColor,
+                      textInputType: TextInputType.emailAddress,
+                      textColor: textPrimary,
+                      hint: 'Enter email',
+                      maxLines: 1,
+                      hintColor: textMuted,
+                      prefixIcon:
+                          Icon(Icons.mail_rounded, color: appColor, size: 20),
+                      context: context,
+                    ),
+                    const SizedBox(height: 18),
+                    TextFieldWidget(
+                      title: "Password",
+                      obsecure: _obscurePassword,
+                      controller: passwordController,
+                      textFieldBorderColor: textFieldBorderColor,
+                      textInputType: TextInputType.visiblePassword,
+                      textColor: textPrimary,
+                      hint: 'Enter password',
+                      maxLines: 1,
+                      hintColor: textMuted,
+                      prefixIcon:
+                          Icon(Icons.lock_rounded, color: appColor, size: 20),
+                      context: context,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: textMuted,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    BlocConsumer<AppCubit, AppStates>(
+                      listener: (context, state) async {
+                        if (state.status == AppStatus.signupSuccess) {
+                          SignUpResponse signUpResponse =
+                              state.responseData?.response as SignUpResponse;
+                          final accessToken =
+                              signUpResponse.accessToken.toString();
+
+                          await PreferenceManager.insertValue(
+                              key: "token", value: accessToken);
+
+                          if (!context.mounted) return;
+                          showToast(
+                            context: context,
+                            message: "Logged in successfully",
+                            buttonColor: successColor,
+                          );
+
+                          setState(() => _routeAfterSignupProfile = true);
+                          context.read<AppCubit>().getProfile(accessToken);
+                          return;
+                        }
+
+                        if (_routeAfterSignupProfile &&
+                            state.status == AppStatus.getProfileSuccess) {
+                          setState(() => _routeAfterSignupProfile = false);
+                          final response = state.responseData?.response
+                              as GetProfileResponse;
+                          if (!context.mounted) return;
+                          final incomplete =
+                              profileNeedsCompletion(response.data);
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => incomplete
+                                  ? const Editprofile(isPostLoginSetup: true)
+                                  : const DashboardScreen(),
+                            ),
+                            (route) => false,
+                          );
+                          return;
+                        }
+
+                        if (_routeAfterSignupProfile &&
+                            state.status == AppStatus.getProfileError) {
+                          setState(() => _routeAfterSignupProfile = false);
+                          if (!context.mounted) return;
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const Editprofile(
+                                  isPostLoginSetup: true),
+                            ),
+                            (route) => false,
+                          );
+                          return;
+                        }
+
+                        if (state.status == AppStatus.signupError) {
+                          showToast(
+                              context: context,
+                              message:
+                                  state.errorData?.message.toString() ?? "");
+                        }
+                      },
+                      builder: (context, state) {
+                        final loading =
+                            state.status == AppStatus.signupLoading ||
+                                (_routeAfterSignupProfile &&
+                                    state.status ==
+                                        AppStatus.getProfileLoading);
+                        return button(
+                          width: MediaQuery.of(context).size.width,
+                          title: 'Login',
+                          fontSize: 16,
+                          isLoading: loading,
+                          fontWeight: FontWeight.w600,
+                          icon: Icons.arrow_forward_rounded,
+                          context: context,
+                          onPressed: () async {
+                            if (isValidation()) {
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              Map<String, dynamic> signUpDetails = {
+                                "email": emailController.text.trim(),
+                                "password": passwordController.text.trim(),
+                              };
+
+                              isInternetConnected().then((value) {
+                                if (value) {
+                                  BlocProvider.of<AppCubit>(context)
+                                      .signUp(signUpDetails);
+                                } else {
+                                  showToast(
+                                      context: context, message: notConnected);
+                                }
+                              });
+                            }
+                          },
+                        );
                       },
                     ),
-                  ),
-                  SpaceWidget(height: 50),
-
-                  BlocConsumer<AppCubit, AppStates>(
-                    listener: (context, state) async {
-                      if (state.status == AppStatus.signupSuccess) {
-                        SignUpResponse signUpResponse =
-                            state.responseData?.response as SignUpResponse;
-                        final accessToken =
-                            signUpResponse.accessToken.toString();
-
-                        await PreferenceManager.insertValue(
-                            key: "token", value: accessToken);
-
-                        if (!context.mounted) return;
-                        showToast(
-                            context: context,
-                            message: "Logged in successfully");
-
-                        setState(() => _routeAfterSignupProfile = true);
-                        context.read<AppCubit>().getProfile(accessToken);
-                        return;
-                      }
-
-                      if (_routeAfterSignupProfile &&
-                          state.status == AppStatus.getProfileSuccess) {
-                        setState(() => _routeAfterSignupProfile = false);
-                        final response =
-                            state.responseData?.response as GetProfileResponse;
-                        if (!context.mounted) return;
-                        final incomplete =
-                            profileNeedsCompletion(response.data);
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => incomplete
-                                ? const Editprofile(
-                                    isPostLoginSetup: true)
-                                : const DashboardScreen(),
-                          ),
-                          (route) => false,
-                        );
-                        return;
-                      }
-
-                      if (_routeAfterSignupProfile &&
-                          state.status == AppStatus.getProfileError) {
-                        setState(() => _routeAfterSignupProfile = false);
-                        if (!context.mounted) return;
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const Editprofile(
-                                isPostLoginSetup: true),
-                          ),
-                          (route) => false,
-                        );
-                        return;
-                      }
-
-                      if (state.status == AppStatus.signupError) {
-                        showToast(
-                            context: context,
-                            message: state.errorData?.message.toString() ?? "");
-                      }
-                    },
-                    builder: (context, state) {
-                      final loading = state.status == AppStatus.signupLoading ||
-                          (_routeAfterSignupProfile &&
-                              state.status ==
-                                  AppStatus.getProfileLoading);
-                      return button(
-                        width: MediaQuery.of(context).size.width,
-                        title: 'Login',
-                        fontSize: 16,
-                        isLoading: loading,
-                        fontWeight: FontWeight.w500,
-                        context: context,
-                        onPressed: () async {
-                          if (isValidation()) {
-                            FocusManager.instance.primaryFocus?.unfocus();
-                            Map<String, dynamic> signUpDetails = {
-                              "email": emailController.text.trim(),
-                              "password": passwordController.text.trim(),
-                            };
-
-                            isInternetConnected().then((value) {
-                              if (value) {
-                                BlocProvider.of<AppCubit>(context)
-                                    .signUp(signUpDetails);
-                              } else {
-                                showToast(
-                                    context: context, message: notConnected);
-                              }
-                            });
-                          }
-                        },
-                      );
-                    },
-                  ),
-
-                  // SizedBox(height: MediaQuery.of(context).size.height * 0.03),
-                  // textRoboto(text: "OR", fontSize: 16),
-                  // SizedBox(height: MediaQuery.of(context).size.height * 0.02),
-                  //
-                  // GestureDetector(
-                  //
-                  //   child: Container(
-                  //     decoration: BoxDecoration(
-                  //         border: Border.all(color: greyColor),
-                  //         borderRadius: BorderRadius.circular(10)),
-                  //     padding: const EdgeInsets.all(8.0),
-                  //     child: Row(
-                  //       mainAxisAlignment: MainAxisAlignment.center,
-                  //       children: [
-                  //         const Icon(Icons.login),
-                  //         const SizedBox(width: 20),
-                  //         textInter(
-                  //             text: "Continue with Google",
-                  //             fontSize: 15,
-                  //             color: Colors.black,
-                  //             fontWeight: FontWeight.w400),
-                  //       ],
-                  //     ),
-                  //   ),
-                  // ),
-                  // SpaceWidget(height: 40),
-
-                  // Row(
-                  //   mainAxisAlignment: MainAxisAlignment.center,
-                  //   children: [
-                  //     textInter(
-                  //         text: "Already have an account?",
-                  //         fontSize: 15,
-                  //         color: Colors.black,
-                  //         fontWeight: FontWeight.w400),
-                  //     const SizedBox(width: 10),
-                  //     GestureDetector(
-                  //       onTap: () {
-                  //         Navigator.pop(context);
-                  //       },
-                  //       child: textInter(
-                  //           text: "Sign In",
-                  //           fontSize: 15,
-                  //           color: Colors.blue,
-                  //           decoration: TextDecoration.underline,
-                  //           decorationColor: Colors.blue,
-                  //           fontWeight: FontWeight.w400),
-                  //     )
-                  //   ],
-                  // ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),

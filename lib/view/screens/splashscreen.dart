@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/model/getprofile.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
 import 'package:spokiai/view/screens/signup.dart';
+import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_navigator.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
@@ -16,9 +18,14 @@ class Splashscreen extends StatefulWidget {
   State<Splashscreen> createState() => _SplashscreenState();
 }
 
-class _SplashscreenState extends State<Splashscreen> {
+class _SplashscreenState extends State<Splashscreen>
+    with SingleTickerProviderStateMixin {
   bool _navigated = false;
   bool _awaitingProfileForRoute = false;
+
+  late final AnimationController _controller;
+  late final Animation<double> _pulse;
+  late final Animation<double> _fade;
 
   void _goHomeOrProfile(BuildContext context, GetProfileResponse? response) {
     final incomplete = profileNeedsCompletion(response?.data);
@@ -38,7 +45,21 @@ class _SplashscreenState extends State<Splashscreen> {
   @override
   void initState() {
     super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
+    _pulse = Tween<double>(begin: 0.95, end: 1.05)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _fade = Tween<double>(begin: 0.8, end: 1.0)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     checkApiStatus();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -92,9 +113,6 @@ class _SplashscreenState extends State<Splashscreen> {
 
           if (state.status == AppStatus.checkStatusError) {
             if (!mounted) return;
-
-            // If the `users/key` check fails but we already have a token,
-            // still route using the profile completeness check.
             final token =
                 PreferenceManager.getStringValue(key: "token") ?? "";
 
@@ -114,17 +132,114 @@ class _SplashscreenState extends State<Splashscreen> {
           return Container(
             width: double.infinity,
             height: double.infinity,
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage("assets/images/iv_splash_bg.png"),
-                fit: BoxFit.cover,
-              ),
+            decoration: BoxDecoration(gradient: heroGradient),
+            child: Stack(
+              children: [
+                Positioned(
+                  top: -120,
+                  right: -120,
+                  child: _softCircle(280, Colors.white.withOpacity(0.08)),
+                ),
+                Positioned(
+                  bottom: -140,
+                  left: -80,
+                  child: _softCircle(320, tealColor.withOpacity(0.18)),
+                ),
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _controller,
+                        builder: (context, child) {
+                          return Opacity(
+                            opacity: _fade.value,
+                            child: Transform.scale(
+                              scale: _pulse.value,
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: tealColor.withOpacity(0.35),
+                                blurRadius: 40,
+                                spreadRadius: 6,
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Image.asset(
+                                'assets/images/iv_app_icon2.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => Icon(
+                                  Icons.auto_stories_rounded,
+                                  color: appColor,
+                                  size: 64,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      Text(
+                        "Spoki AI",
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 42,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        "Stories, conversations & learning — reimagined.",
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withOpacity(0.85),
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 48),
+                      SizedBox(
+                        width: 38,
+                        height: 38,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 3,
+                          backgroundColor: Colors.white.withOpacity(0.2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           );
         },
       ),
     );
   }
+
+  Widget _softCircle(double size, Color color) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+        ),
+      );
 
   void checkApiStatus() {
     context.read<AppCubit>().checkStatus();

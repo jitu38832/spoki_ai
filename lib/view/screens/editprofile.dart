@@ -255,17 +255,13 @@ class _EditprofileState extends State<Editprofile> {
     return PopScope(
       canPop: !widget.isPostLoginSetup,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: surfaceBg,
         appBar: AppBar(
           automaticallyImplyLeading: !widget.isPostLoginSetup,
-          title: const Text(
-            "Edit Profile",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          centerTitle: true,
-          elevation: 0,
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          title: Text(widget.isPostLoginSetup
+              ? "Complete your profile"
+              : "Edit Profile"),
+          backgroundColor: surfaceBg,
         ),
         body: BlocConsumer<AppCubit, AppStates>(
           listener: (context, state) {
@@ -400,9 +396,18 @@ class _EditprofileState extends State<Editprofile> {
                     onChanged: (v) =>
                         setState(() => _selectedLanguage = v),
                   ),
-                  const SizedBox(height: 40),
-                  GestureDetector(
-                    onTap: () async {
+                  const SizedBox(height: 36),
+                  button(
+                    context: context,
+                    width: double.infinity,
+                    title: widget.isPostLoginSetup
+                        ? "Continue"
+                        : "Update Profile",
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    isLoading: false,
+                    icon: Icons.check_circle_rounded,
+                    onPressed: () async {
                       if (!context.mounted) return;
                       if (widget.isPostLoginSetup) {
                         if (!_validateExtrasForPostLogin()) return;
@@ -421,29 +426,6 @@ class _EditprofileState extends State<Editprofile> {
                         Navigator.pop(context);
                       }
                     },
-                    child: Card(
-                      elevation: 6,
-                      shadowColor: appColor.withOpacity(0.8),
-                      child: Container(
-                        decoration: BoxDecoration(
-                            color: appColor,
-                            borderRadius:
-                                const BorderRadius.all(Radius.circular(10))),
-                        child: Padding(
-                          padding: const EdgeInsets.all(13.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              textInter(
-                                  text: "Update Profile",
-                                  fontSize: 17,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w400)
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
                   ),
                   const SizedBox(height: 24),
                 ],

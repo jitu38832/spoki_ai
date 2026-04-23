@@ -276,14 +276,22 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.grey[100],
+            color: tealSoft,
             borderRadius: BorderRadius.circular(20),
           ),
-          child: textInter(
-            text:
-                "Words: ${widget.generateStoryResponse.data?.metadata?.wordCount.toString() ?? ""}",
-            fontSize: 13,
-            color: Colors.grey[700],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.text_fields_rounded, size: 14, color: tealDark),
+              const SizedBox(width: 6),
+              textInter(
+                text:
+                    "${widget.generateStoryResponse.data?.metadata?.wordCount.toString() ?? "0"} words",
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: tealDark,
+              ),
+            ],
           ),
         ),
         Row(
@@ -728,46 +736,58 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
         unawaited(_exitToHome());
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: surfaceBg,
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
             onPressed: () => unawaited(_exitToHome()),
           ),
-        title: const Text(
-          "Story Time",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          title: const Text("Story Time"),
         ),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-      ),
       body: Stack(
         children: [
           // Main Layout
           Column(
             children: [
-              // Top Blue Header (Fixed)
+              // Title Header
               Container(
                 width: double.infinity,
-                decoration: const BoxDecoration(
-                  // color: Color(0xFFE3F2FD),
-                  borderRadius:
-                      BorderRadius.vertical(bottom: Radius.circular(30)),
+                margin: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                decoration: BoxDecoration(
+                  gradient: brandGradient,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: brandShadow(opacity: 0.22, blur: 16),
                 ),
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
                 child: Column(
                   children: [
-                    // Title
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        "YOUR STORY",
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     textInter(
                       text: widget.generateStoryResponse.data?.metadata?.title
                               .toString() ??
                           "",
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF6A1B9A),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
                       textAlign: TextAlign.center,
+                      maxLines: 3,
                     ),
                     // const SizedBox(height: 20),
 
@@ -1077,21 +1097,27 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             ),
                           ],
                           const SizedBox(height: 12),
-                          SizedBox(
+                          Container(
                             width: double.infinity,
-                            height: 52,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _storyQuizYesEnabled
-                                    ? appColor
-                                    : Colors.grey.shade400,
-                                disabledBackgroundColor: Colors.grey.shade400,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: _storyQuizYesEnabled ? 3 : 0,
-                              ),
-                              onPressed: _storyQuizYesEnabled
+                            height: 54,
+                            decoration: BoxDecoration(
+                              gradient: _storyQuizYesEnabled
+                                  ? brandGradient
+                                  : LinearGradient(colors: [
+                                      surfaceMuted,
+                                      surfaceMuted
+                                    ]),
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: _storyQuizYesEnabled
+                                  ? brandShadow(
+                                      opacity: 0.22, blur: 14)
+                                  : null,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: _storyQuizYesEnabled
                                   ? () async {
                                       await stop();
                                       if (!mounted) return;
@@ -1120,11 +1146,22 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                       );
                                     }
                                   : null,
-                              child: textInter(
-                                text: "Yes",
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                              child: Center(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.quiz_rounded,
+                                        color: Colors.white, size: 22),
+                                    const SizedBox(width: 10),
+                                    textInter(
+                                      text: "Start Quiz",
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ],
+                                ),
+                              ),
                               ),
                             ),
                           ),

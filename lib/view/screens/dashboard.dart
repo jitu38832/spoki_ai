@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/view/screens/chatlist.dart';
-import 'package:spokiai/view/screens/story_quiz_screen.dart';
 import 'package:spokiai/view/screens/storyhistory.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'home.dart';
 
 class DashboardScreen extends StatefulWidget {
-  final int? initialTabIndex; // ✅ Added to select specific tab
-
+  final int? initialTabIndex;
   const DashboardScreen({super.key, this.initialTabIndex = 0});
 
   @override
@@ -23,6 +22,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const Chatlist(),
   ];
 
+  final List<_NavItem> _items = [
+    _NavItem(Icons.home, Icons.home_outlined, "Home"),
+    _NavItem(Icons.access_time_filled, Icons.access_time, "History"),
+    _NavItem(Icons.chat, Icons.chat_bubble_outline, "Chat"),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -31,51 +36,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.grey[100],
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
+      extendBody: true,
+      backgroundColor: surfaceBg,
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: SafeArea(
+          top: false,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F4F8),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: appColor.withOpacity(0.08),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: 'Home',
+            child: Row(
+              children: List.generate(_items.length, (i) {
+                final selected = i == _selectedIndex;
+                final item = _items[i];
+                return Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedIndex = i),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            selected ? item.selectedIcon : item.icon,
+                            color:
+                                selected ? appColor : textSecondary,
+                            size: 27,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            item.label,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight:
+                                  selected ? FontWeight.w600 : FontWeight.w500,
+                              color: selected ? appColor : textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.history),
-              label: 'History',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.chat),
-              label: 'Chat',
-            ),
-          ],
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          selectedItemColor: appColor, // Dark grey for active
-          unselectedItemColor: Colors.grey[400],
-          backgroundColor: Colors.grey[100],
-          type: BottomNavigationBarType.fixed,
-          elevation: 0,
+          ),
         ),
       ),
     );
   }
+}
+
+class _NavItem {
+  final IconData selectedIcon;
+  final IconData icon;
+  final String label;
+  _NavItem(this.selectedIcon, this.icon, this.label);
 }

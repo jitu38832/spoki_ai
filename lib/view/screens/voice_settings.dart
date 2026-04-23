@@ -427,7 +427,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 height: 32,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF7A5CFF), Color(0xFF4C40CC)],
+                    colors: [Color(0xFF6D3BBF), Color(0xFF6D3BBF)],
                   ),
                   shape: BoxShape.circle,
                   boxShadow: [
@@ -1003,7 +1003,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
           child: Ink(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF7B5DF6), Color(0xFF3A33AF)],
+                colors: [Color(0xFF6D3BBF), Color(0xFF6D3BBF)],
               ),
               borderRadius: BorderRadius.circular(26),
             ),

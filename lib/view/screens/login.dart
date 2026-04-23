@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:carousel_slider/carousel_slider.dart';
@@ -16,12 +13,9 @@ import 'package:spokiai/view/utils/preference_manager.dart';
 import '../../viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/colors.dart';
-import '../utils/constants.dart';
-import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
 import 'dashboard.dart';
 import 'editprofile.dart';
-import 'forgot_password.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,57 +30,41 @@ class _LoginScreenState extends State<LoginScreen> {
       CarouselSliderController();
   bool _termsAccepted = true;
   bool _routeAfterGoogleProfile = false;
-  final TextEditingController _phoneController = TextEditingController();
 
-  final List<SlideData> _slides = [
-    SlideData(
+  final List<_SlideData> _slides = [
+    _SlideData(
       image: "assets/images/iv_login_slider.png",
       tagline: "Unlock Your English Fluency",
     ),
-    SlideData(
+    _SlideData(
       image: "assets/images/iv_login_slider2.png",
       tagline: "Start Your Personalized Learning Journey",
     ),
-    SlideData(
+    _SlideData(
       image: "assets/images/iv_login_slider3.png",
       tagline: "Join Now & Grow",
     ),
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _phoneController.addListener(() {
-      setState(() {}); // Rebuild to update button state
-    });
-  }
-
-  @override
-  void dispose() {
-    _phoneController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
-        statusBarColor: Colors.white,
+        statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.dark,
       ),
     );
 
-    return SafeArea(
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        body: Column(
+    return Scaffold(
+      backgroundColor: surfaceBg,
+      body: SafeArea(
+        child: Column(
           children: [
+            const SizedBox(height: 16),
+            _buildBrandHeader(),
+            const SizedBox(height: 20),
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.1,
-            ),
-
-            SizedBox(
-              height: MediaQuery.of(context).size.height * 0.4,
+              height: MediaQuery.of(context).size.height * 0.36,
               child: CarouselSlider.builder(
                 carouselController: _carouselController,
                 itemCount: _slides.length,
@@ -94,30 +72,50 @@ class _LoginScreenState extends State<LoginScreen> {
                   return Column(
                     children: [
                       Expanded(
-                        child: Image.asset(
-                          _slides[index].image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: Colors.grey[200],
-                              child: const Center(
-                                child: Icon(Icons.image, size: 50),
-                              ),
-                            );
-                          },
+                        child: Container(
+                          margin:
+                              const EdgeInsets.symmetric(horizontal: 24),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            color: Colors.white,
+                            boxShadow: softCardShadow(),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: Image.asset(
+                              _slides[index].image,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    gradient: backgroundSheetGradient,
+                                  ),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.auto_stories_rounded,
+                                      size: 80,
+                                      color: appColor,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ),
                       ),
-
-                      // TAGLINE – directly under the image
+                      const SizedBox(height: 16),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 12),
-                        child: textInter(
-                          text: _slides[index].tagline,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black,
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 28),
+                        child: Text(
+                          _slides[index].tagline,
                           textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            color: textPrimary,
+                            height: 1.3,
+                          ),
                         ),
                       ),
                     ],
@@ -128,108 +126,126 @@ class _LoginScreenState extends State<LoginScreen> {
                   viewportFraction: 1.0,
                   enableInfiniteScroll: true,
                   autoPlay: true,
-                  autoPlayInterval: Duration(seconds: 3),
+                  autoPlayInterval: const Duration(seconds: 3),
                   onPageChanged: (index, reason) {
                     setState(() => _currentIndex = index);
                   },
                 ),
               ),
             ),
-
-            // ---------- DOTS INDICATOR ----------
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(top: 14, bottom: 4),
               child: DotsIndicator(
                 dotsCount: _slides.length,
                 position: _currentIndex.toDouble(),
                 decorator: DotsDecorator(
-                  size: const Size.square(9.0),
-                  activeSize: const Size(24.0, 9.0),
+                  size: const Size.square(8.0),
+                  activeSize: const Size(26.0, 8.0),
                   activeShape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(5.0),
                   ),
-                  color: Colors.grey[300]!,
+                  color: surfaceMuted,
                   activeColor: appColor,
                   spacing: const EdgeInsets.symmetric(horizontal: 4),
                 ),
               ),
             ),
-
-            // ---------- LOGIN SECTION ----------
+            const Spacer(),
             _buildLoginSection(),
+            const SizedBox(height: 16),
           ],
         ),
       ),
     );
   }
 
+  Widget _buildBrandHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        SpokiLogoMark(size: 36),
+        const SizedBox(width: 10),
+        Text(
+          "Spoki AI",
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: textPrimary,
+            letterSpacing: 0.6,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildLoginSection() {
     return Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          borderRadius: const BorderRadius.all(Radius.circular(10)),
-          // color: const Color(0xFF9B59B6).withOpacity(0.1),
-        ),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      child: SectionCard(
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
         child: Column(
           children: [
-            textInter(
-              text: "Login or Signup",
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.black,
+            Text(
+              "Sign in to continue",
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: textPrimary,
+              ),
             ),
-            const SizedBox(height: 20),
-
-            // Phone input
-
-            // Terms checkbox
+            const SizedBox(height: 6),
+            Text(
+              "Create your personalized learning companion",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: textSecondary,
+              ),
+            ),
+            const SizedBox(height: 18),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Checkbox(
-                  value: _termsAccepted,
-                  onChanged: (v) => setState(() => _termsAccepted = v ?? false),
-                  activeColor: appColor,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4)),
+                Transform.scale(
+                  scale: 1.05,
+                  child: Checkbox(
+                    value: _termsAccepted,
+                    onChanged: (v) =>
+                        setState(() => _termsAccepted = v ?? false),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
+                  ),
                 ),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.only(top: 14),
                     child: RichText(
                       text: TextSpan(
-                        style: GoogleFonts.roboto(
+                        style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w400,
-                          color: Colors.grey[700],
+                          color: textSecondary,
+                          height: 1.45,
                         ),
                         children: [
                           const TextSpan(
                               text: "By continuing, you agree to our "),
                           TextSpan(
-                            text: "Terms and Conditions",
-                            style: GoogleFonts.roboto(
+                            text: "Terms",
+                            style: GoogleFonts.inter(
                               fontSize: 12,
-                              fontWeight: FontWeight.w400,
+                              fontWeight: FontWeight.w600,
                               color: appColor,
                               decoration: TextDecoration.underline,
                             ),
                           ),
-                          TextSpan(
-                            text: " and ",
-                            style: GoogleFonts.roboto(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              color: Colors.grey[700],
-                            ),
-                          ),
+                          const TextSpan(text: " and "),
                           TextSpan(
                             text: "Privacy Policy",
-                            style: GoogleFonts.roboto(
+                            style: GoogleFonts.inter(
                               fontSize: 12,
-                              fontWeight: FontWeight.w400,
+                              fontWeight: FontWeight.w600,
                               color: appColor,
                               decoration: TextDecoration.underline,
                             ),
@@ -242,23 +258,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
             BlocConsumer<AppCubit, AppStates>(
               listener: (context, state) async {
                 if (state.status == AppStatus.loginSuccess) {
                   GoogleLoginResponse googleLoginResponse =
                       state.responseData?.response as GoogleLoginResponse;
-
                   final accessToken = googleLoginResponse
                           .data?.tokens?.access?.token
                           .toString() ??
                       "";
-
                   await PreferenceManager.insertValue(
                       key: "token", value: accessToken);
 
                   if (!context.mounted) return;
-                  showToast(context: context, message: "Logged in successfully");
+                  showToast(
+                    context: context,
+                    message: "Logged in successfully",
+                    buttonColor: successColor,
+                  );
 
                   setState(() => _routeAfterGoogleProfile = true);
                   context.read<AppCubit>().getProfile(accessToken);
@@ -302,56 +320,28 @@ class _LoginScreenState extends State<LoginScreen> {
                 final loading = state.status == AppStatus.loginLoading ||
                     (_routeAfterGoogleProfile &&
                         state.status == AppStatus.getProfileLoading);
-                return loading
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          color: appColor,
-                        ),
-                      )
-                    : GestureDetector(
-                        onTap: () async {
-                          await FirebaseAuth.instance.signOut();
-                          await signInWithGoogle(context);
-                          //
-                          // /Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) {
-                          //   return DashboardScreen();
-                          // },), (route) => false,);
-                        },
-                        child: Card(
-                          elevation: 6,
-                          shadowColor: appColor.withOpacity(0.8),
-                          child: Container(
-                            decoration: BoxDecoration(
-                                color: appColor,
-                                borderRadius:
-                                    BorderRadius.all(Radius.circular(10))),
-                            child: Padding(
-                              padding: const EdgeInsets.all(13.0),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.login,
-                                    color: Colors.white,
-                                  ),
-                                  SizedBox(
-                                    width: 20,
-                                  ),
-                                  textInter(
-                                      text: "Continue with google",
-                                      fontSize: 17,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w400)
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                return button(
+                  context: context,
+                  width: double.infinity,
+                  title: loading ? 'Signing you in…' : 'Continue with Google',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  isLoading: loading,
+                  icon: Icons.g_mobiledata_rounded,
+                  onPressed: () async {
+                    if (!_termsAccepted) {
+                      showToast(
+                        context: context,
+                        message: "Please accept the terms to continue",
                       );
+                      return;
+                    }
+                    await FirebaseAuth.instance.signOut();
+                    await signInWithGoogle(context);
+                  },
+                );
               },
             ),
-
-            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -366,37 +356,22 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     try {
-
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-
-      if (googleUser == null) {
-        if (context.mounted) {}
-        return;
-      }
+      if (googleUser == null) return;
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
       final String? idToken = googleAuth.idToken;
-      final String? accessToken = googleAuth.accessToken;
-
-      print("USER EMAIL: ${googleUser.email}");
-      print("ID TOKEN: $idToken");
-      print("ACCESS TOKEN: $accessToken");
-
       BlocProvider.of<AppCubit>(context).login(idToken.toString());
-
-      // showToast(context: context, message: "Signed in as ${googleUser.email}");
     } catch (error) {
-      print("Google Sign-In error: $error");
       showToast(context: context, message: "Google Sign-In failed.");
     }
   }
 }
 
-class SlideData {
+class _SlideData {
   final String image;
   final String tagline;
-
-  SlideData({required this.image, required this.tagline});
+  _SlideData({required this.image, required this.tagline});
 }

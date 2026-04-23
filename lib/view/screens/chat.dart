@@ -2112,7 +2112,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   static const Color _fbCardBg = Color(0xFF262733);
   static const Color _fbSectionBg = Color(0xFF2E3040);
   static const Color _fbRowBg = Color(0xFF1F2130);
-  static const Color _fbPurple = Color(0xFF7B61FF);
+  static const Color _fbPurple = Color(0xFF6D3BBF);
   static const Color _fbGrammarGreen = Color(0xFF1B5E20);
   static const Color _fbGrammarGreenText = Color(0xFF69F0AE);
 
@@ -2495,7 +2495,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   static const Color _ttsCapsuleBg = Color(0xFFF0F0F2);
   static const Color _ttsPlayGradientA = Color(0xFF5B8CFF);
-  static const Color _ttsPlayGradientB = Color(0xFF7B61FF);
+  static const Color _ttsPlayGradientB = Color(0xFF6D3BBF);
   static const Color _ttsWaveColor = Color(0xFF6B7FD7);
   static const Color _ttsWaveUnplayed = Color(0xFF1A1A1A);
 

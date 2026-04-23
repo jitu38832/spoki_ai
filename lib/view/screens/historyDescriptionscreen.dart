@@ -269,7 +269,7 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
                               "",
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFF6A1B9A),
+                          color: appColor,
                           textAlign: TextAlign.center,
                         ),
                         // const SizedBox(height: 20),
