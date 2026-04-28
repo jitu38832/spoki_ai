@@ -47,6 +47,11 @@ class StorydescriptionScreen extends StatefulWidget {
 }
 
 class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
+  static const LinearGradient _appPurpleGradient = LinearGradient(
+    colors: [Color(0xFF5A35E5), Color(0xFF7E48F4)],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+  );
   static const String _pdfDownloadChannelId = 'story_pdf_downloads';
   static const String _pdfDownloadChannelName = 'Story PDF Downloads';
   static const String _pdfDownloadChannelDescription =
@@ -755,7 +760,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                 margin: const EdgeInsets.fromLTRB(16, 10, 16, 16),
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
                 decoration: BoxDecoration(
-                  gradient: brandGradient,
+                  gradient: _appPurpleGradient,
                   borderRadius: BorderRadius.circular(22),
                   boxShadow: brandShadow(opacity: 0.22, blur: 16),
                 ),
@@ -1102,7 +1107,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             height: 54,
                             decoration: BoxDecoration(
                               gradient: _storyQuizYesEnabled
-                                  ? brandGradient
+                                  ? _appPurpleGradient
                                   : LinearGradient(colors: [
                                       surfaceMuted,
                                       surfaceMuted

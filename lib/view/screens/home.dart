@@ -1,16 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/model/homebanner.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
-import 'package:spokiai/view/screens/signup.dart';
-import 'package:spokiai/view/screens/privacypolicy.dart';
-import 'package:spokiai/view/screens/termscondition.dart';
+import 'package:spokiai/view/screens/settings.dart';
 import 'package:spokiai/view/utils/colors.dart';
-import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 
 import '../../viewmodel/cubit/appcubit.dart';
@@ -83,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Builder(
             builder: (context) => Material(
-              color: Colors.white,
+              color: cardSurface,
               shape: const CircleBorder(),
               elevation: 0,
               child: InkWell(
@@ -99,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: cardSurface,
                     shape: BoxShape.circle,
                     border: Border.all(color: surfaceMuted),
                   ),
@@ -328,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
       constraints: const BoxConstraints(minHeight: 120),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardSurface,
         border: Border.all(color: appColor.withOpacity(0.6), width: 1.2),
         borderRadius: BorderRadius.circular(14),
       ),
@@ -432,8 +428,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             Container(
                               width: 16,
                               height: 16,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
+                              decoration: BoxDecoration(
+                                color: cardSurface,
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(Icons.arrow_forward_rounded,
@@ -466,8 +462,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAppDrawer() {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Drawer(
-      backgroundColor: const Color(0xFFF4EFFB),
+      backgroundColor: isDark ? const Color(0xFF14141D) : const Color(0xFFF4EFFB),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
@@ -479,7 +476,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 90,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF2F2F3F) : Colors.white,
+                      width: 3,
+                    ),
                     gradient: const LinearGradient(
                       colors: [Color(0xFFC8B9FA), Color(0xFFB9A5F4)],
                       begin: Alignment.topLeft,
@@ -494,12 +494,35 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: InkWell(
+                          onTap: _closeDrawer,
+                          borderRadius: BorderRadius.circular(18),
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.16)
+                                  : Colors.white.withOpacity(0.82),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.close_rounded,
+                              color: isDark ? Colors.white : const Color(0xFF36206E),
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
                       Text(
                         "Mohd Salim",
                         style: GoogleFonts.inter(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFF161442),
+                          color: isDark ? Colors.white : const Color(0xFF161442),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -508,7 +531,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
-                          color: const Color(0xFF5F5C7A),
+                          color: isDark
+                              ? Colors.white.withOpacity(0.88)
+                              : const Color(0xFF5F5C7A),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -541,7 +566,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: "My Profile",
                   subtitle: "View & edit your details",
                   onTap: () {
-                    Navigator.pop(context);
+                    _closeDrawer();
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -550,20 +575,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
+                Divider(
+                  height: 1,
+                  color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFECE7F8),
+                ),
                 _drawerRowItem(
                   icon: Icons.star_rounded,
                   title: "Upgrade to Pro",
                   subtitle: "Unlock AI Chat & Unlimited Stories",
                   onTap: () {
-                    showToast(context: context, message: "Coming soon");
+                    _closeDrawerAndToast("Coming soon");
                   },
                 ),
                 const SizedBox(height: 10),
                 InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () {
-                    showToast(context: context, message: "Coming soon");
+                    _closeDrawerAndToast("Coming soon");
                   },
                   child: Container(
                     height: 50,
@@ -605,20 +633,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: "Invite Friends",
                   subtitle: "Earn rewards & grow together",
                   onTap: () {
-                    showToast(context: context, message: "Coming soon");
+                    _closeDrawerAndToast("Coming soon");
                   },
                 ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
+                Divider(
+                  height: 1,
+                  color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFECE7F8),
+                ),
                 _drawerRowItem(
                   icon: Icons.settings_rounded,
                   title: "Settings",
                   subtitle: "Manage app preferences",
                   onTap: () {
-                    Navigator.pop(context);
+                    _closeDrawer();
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => PrivacyPolicyScreen(),
+                        builder: (context) => const SettingsScreen(),
                       ),
                     );
                   },
@@ -631,7 +662,7 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle: "Get tips & updates daily",
               buttonText: "Join Now",
               icon: Icons.call,
-              onTap: () => showToast(context: context, message: "Coming soon"),
+              onTap: () => _closeDrawerAndToast("Coming soon"),
             ),
             const SizedBox(height: 10),
             _drawerPromoCard(
@@ -639,64 +670,7 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle: "Free discussions & speaking",
               buttonText: "Join Now",
               icon: Icons.send_rounded,
-              onTap: () => showToast(context: context, message: "Coming soon"),
-            ),
-            const SizedBox(height: 10),
-            _drawerSectionCard(
-              children: [
-                _drawerRowItem(
-                  icon: Icons.description_outlined,
-                  title: "Terms & Conditions",
-                  subtitle: "Read the app terms",
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TermsConditionScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
-                _drawerRowItem(
-                  icon: Icons.privacy_tip_outlined,
-                  title: "Privacy Policy",
-                  subtitle: "Know how your data is handled",
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PrivacyPolicyScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
-                _drawerRowItem(
-                  icon: Icons.delete_outline_rounded,
-                  title: "Delete Account",
-                  subtitle: "Permanently remove your account",
-                  iconColor: errorColor,
-                  onTap: () => _confirmAccountAction(
-                    title: "Confirm Delete",
-                    body: "Are you sure you want to delete your account?",
-                    confirmLabel: "Yes, Delete",
-                  ),
-                ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
-                _drawerRowItem(
-                  icon: Icons.logout_rounded,
-                  title: "Logout",
-                  subtitle: "Sign out from this device",
-                  onTap: () => _confirmAccountAction(
-                    title: "Confirm Logout",
-                    body: "Are you sure you want to logout?",
-                    confirmLabel: "Yes, Logout",
-                  ),
-                ),
-              ],
+              onTap: () => _closeDrawerAndToast("Coming soon"),
             ),
           ],
         ),
@@ -704,17 +678,29 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _closeDrawer() {
+    Navigator.of(context).pop();
+  }
+
+  void _closeDrawerAndToast(String message) {
+    _closeDrawer();
+    showToast(context: context, message: message);
+  }
+
   Widget _drawerChip({
     required IconData icon,
     required Color iconColor,
     required String text,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.7),
+        color: isDark
+            ? const Color(0xFF252535).withOpacity(0.9)
+            : Colors.white.withOpacity(0.7),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFD6CFFA)),
+        border: Border.all(color: isDark ? const Color(0xFF3B3B50) : const Color(0xFFD6CFFA)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -726,7 +712,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: const Color(0xFF4E4278),
+              color: textPrimary,
             ),
           ),
         ],
@@ -735,15 +721,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _drawerSectionCard({required List<Widget> children}) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardSurface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFEAE5F7)),
+        border: Border.all(color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFEAE5F7)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2D1769).withOpacity(0.05),
+            color: isDark
+                ? Colors.black.withOpacity(0.25)
+                : const Color(0xFF2D1769).withOpacity(0.05),
             blurRadius: 14,
             offset: const Offset(0, 4),
           ),
@@ -760,6 +749,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required VoidCallback onTap,
     Color? iconColor,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Color tint = iconColor ?? appColor;
     return InkWell(
       onTap: onTap,
@@ -791,7 +781,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 20 / 1.25,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFF17153E),
+                      color: textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -800,15 +790,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: const Color(0xFF676381),
+                      color: textSecondary,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.chevron_right_rounded,
-              color: Color(0xFF7540E5),
+              color: isDark ? const Color(0xFFB69CFF) : const Color(0xFF7540E5),
               size: 28,
             ),
           ],
@@ -824,16 +814,19 @@ class _HomeScreenState extends State<HomeScreen> {
     required IconData icon,
     required VoidCallback onTap,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(
-          colors: [Color(0xFFF4F0FE), Color(0xFFE4DAFF)],
+        gradient: LinearGradient(
+          colors: isDark
+              ? const [Color(0xFF262638), Color(0xFF1E1E2D)]
+              : const [Color(0xFFF4F0FE), Color(0xFFE4DAFF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(color: Colors.white),
+        border: Border.all(color: isDark ? const Color(0xFF34344A) : Colors.white),
       ),
       child: Row(
         children: [
@@ -846,7 +839,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: GoogleFonts.inter(
                     fontSize: 20 / 1.25,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF161442),
+                    color: textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -855,7 +848,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFF676381),
+                      color: textSecondary,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -910,44 +903,5 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _confirmAccountAction({
-    required String title,
-    required String body,
-    required String confirmLabel,
-  }) async {
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
-          title: Text(title),
-          content: Text(body),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () async {
-                PreferenceManager.clearPreferences();
-                await FirebaseAuth.instance.signOut();
-                if (!mounted) return;
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SignUpScreen(),
-                  ),
-                  (route) => false,
-                );
-              },
-              child: Text(confirmLabel,
-                  style: TextStyle(color: errorColor)),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 

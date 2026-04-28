@@ -155,4 +155,84 @@ class AppTheme {
       ),
     );
   }
+
+  static ThemeData get dark {
+    const ColorScheme scheme = ColorScheme(
+      brightness: Brightness.dark,
+      primary: Color(0xFFB69CFF),
+      onPrimary: Color(0xFF24134D),
+      secondary: Color(0xFF9ECAFF),
+      onSecondary: Color(0xFF0E2237),
+      error: Color(0xFFFFB4AB),
+      onError: Color(0xFF690005),
+      surface: Color(0xFF121212),
+      onSurface: Color(0xFFE8E1F3),
+    );
+
+    final TextTheme text = GoogleFonts.interTextTheme(
+      ThemeData.dark().textTheme,
+    ).apply(
+      bodyColor: Colors.white,
+      displayColor: Colors.white,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: const Color(0xFF121212),
+      primaryColor: appColor,
+      textTheme: text,
+      fontFamily: GoogleFonts.inter().fontFamily,
+      appBarTheme: AppBarTheme(
+        backgroundColor: const Color(0xFF121212),
+        foregroundColor: scheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        titleTextStyle: GoogleFonts.inter(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: scheme.onSurface,
+        ),
+        iconTheme: IconThemeData(color: scheme.onSurface),
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+      ),
+      cardTheme: CardThemeData(
+        color: const Color(0xFF1E1E1E),
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: scheme.primary),
+      ),
+      progressIndicatorTheme:
+          ProgressIndicatorThemeData(color: scheme.primary),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF2A2A2A),
+        contentTextStyle:
+            GoogleFonts.inter(color: Colors.white, fontSize: 14),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: Color(0xFF2F2F2F),
+        space: 1,
+        thickness: 1,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22)),
+        titleTextStyle: GoogleFonts.inter(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: scheme.onSurface,
+        ),
+      ),
+    );
+  }
 }

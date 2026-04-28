@@ -1,13 +1,10 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/splashscreen.dart';
-import 'package:spokiai/view/screens/story_quiz_screen.dart';
 import 'package:spokiai/view/utils/app_theme.dart';
-import 'package:spokiai/view/utils/firebase_options.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/view/utils/theme_controller.dart';
 import 'package:spokiai/data/local/inworld_tts_preferences.dart';
 import 'package:spokiai/data/repositories/inworld_tts_repository_impl.dart';
 import 'package:spokiai/data/sources/inworld_tts_remote_data_source.dart';
@@ -23,6 +20,7 @@ void main() async {
   // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await InworldTtsConfig.loadSecrets();
   await PreferenceManager.init();
+  ThemeController.loadFromPreferences();
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -68,13 +66,19 @@ class InitApp extends StatelessWidget {
                 ..loadPreferences(),
             ),
           ],
-          child: MaterialApp(
-            navigatorKey: navigatorKey,
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.light,
-            darkTheme: AppTheme.light,
-            title: 'Spoki AI',
-            home: const Splashscreen(),
+          child: ValueListenableBuilder<ThemeMode>(
+            valueListenable: ThemeController.themeModeNotifier,
+            builder: (context, mode, _) {
+              return MaterialApp(
+                navigatorKey: navigatorKey,
+                debugShowCheckedModeBanner: false,
+                theme: AppTheme.light,
+                darkTheme: AppTheme.dark,
+                themeMode: mode,
+                title: 'Spoki AI',
+                home: const Splashscreen(),
+              );
+            },
           ),
         );
       },

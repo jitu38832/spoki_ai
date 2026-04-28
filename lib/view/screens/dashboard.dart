@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/view/screens/chatlist.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
-import 'package:spokiai/view/screens/privacypolicy.dart';
-import 'package:spokiai/view/screens/signup.dart';
+import 'package:spokiai/view/screens/settings.dart';
 import 'package:spokiai/view/screens/storyhistory.dart';
-import 'package:spokiai/view/screens/termscondition.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
-import 'package:spokiai/view/utils/preference_manager.dart';
 import 'home.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -65,7 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             padding:
                 const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFFF4F4F8),
+              color: cardSurface,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: appColor.withOpacity(0.08),
@@ -121,10 +117,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildAppDrawer() {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final bool compact = MediaQuery.of(context).size.height <= 820;
     return Drawer(
       width: MediaQuery.of(context).size.width * 0.97,
-      backgroundColor: const Color(0xFFF4EFFB),
+      backgroundColor: isDark ? const Color(0xFF14141D) : const Color(0xFFF4EFFB),
       child: SafeArea(
         child: ListView(
           padding: EdgeInsets.fromLTRB(12, compact ? 10 : 14, 12, 14),
@@ -146,6 +143,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               child: Stack(
                 children: [
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: InkWell(
+                      onTap: _closeDrawer,
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        width: compact ? 28 : 30,
+                        height: compact ? 28 : 30,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.16)
+                              : Colors.white.withOpacity(0.82),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: isDark ? Colors.white : const Color(0xFF36206E),
+                          size: compact ? 16 : 18,
+                        ),
+                      ),
+                    ),
+                  ),
                   Positioned(
                     right: -8,
                     top: -6,
@@ -178,7 +198,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         height: compact ? 98 : 112,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 5),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF2F2F3F) : Colors.white,
+                            width: 5,
+                          ),
                           gradient: const LinearGradient(
                             colors: [Color(0xFFC8B9FA), Color(0xFFB9A5F4)],
                             begin: Alignment.topLeft,
@@ -201,7 +224,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               style: GoogleFonts.inter(
                                 fontSize: compact ? 18 : 22,
                                 fontWeight: FontWeight.w800,
-                                color: const Color(0xFF141246),
+                                color: isDark ? Colors.white : const Color(0xFF141246),
                                 letterSpacing: 0.2,
                               ),
                             ),
@@ -211,7 +234,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               style: GoogleFonts.inter(
                                 fontSize: compact ? 12 : 14,
                                 fontWeight: FontWeight.w500,
-                                color: const Color(0xFF4F4B77),
+                                color: isDark
+                                    ? Colors.white.withOpacity(0.88)
+                                    : const Color(0xFF4F4B77),
                               ),
                             ),
                             SizedBox(height: compact ? 6 : 10),
@@ -259,7 +284,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   title: "My Profile",
                   subtitle: "View & edit your details",
                   onTap: () {
-                    Navigator.pop(context);
+                    _closeDrawer();
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -269,12 +294,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                   compact: compact,
                 ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
+                Divider(
+                  height: 1,
+                  color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFECE7F8),
+                ),
                 _drawerRowItem(
                   icon: Icons.star_rounded,
                   title: "Upgrade to Pro",
                   subtitle: "Unlock AI Chat & Unlimited Stories",
-                  onTap: () => showToast(context: context, message: "Coming soon"),
+                  onTap: () => _closeDrawerAndToast("Coming soon"),
                   compact: compact,
                 ),
                 SizedBox(height: compact ? 8 : 10),
@@ -289,15 +317,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.group_rounded,
                   title: "Invite Friends",
                   subtitle: "Earn rewards & grow together",
-                  onTap: () => showToast(context: context, message: "Coming soon"),
+                  onTap: () => _closeDrawerAndToast("Coming soon"),
                   compact: compact,
                 ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
+                Divider(
+                  height: 1,
+                  color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFECE7F8),
+                ),
                 _drawerRowItem(
                   icon: Icons.settings_rounded,
                   title: "Settings",
                   subtitle: "Manage app preferences",
-                  onTap: () => showToast(context: context, message: "Coming soon"),
+                  onTap: () {
+                    _closeDrawer();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
+                  },
                   compact: compact,
                 ),
               ],
@@ -308,7 +347,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               subtitle: "Get tips & updates daily",
               buttonText: "Join Now",
               icon: Icons.call,
-              onTap: () => showToast(context: context, message: "Coming soon"),
+              onTap: () => _closeDrawerAndToast("Coming soon"),
               compact: compact,
             ),
             SizedBox(height: compact ? 8 : 10),
@@ -317,70 +356,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
               subtitle: "Free discussions & speaking",
               buttonText: "Join Now",
               icon: Icons.send_rounded,
-              onTap: () => showToast(context: context, message: "Coming soon"),
+              onTap: () => _closeDrawerAndToast("Coming soon"),
               compact: compact,
             ),
             const SizedBox(height: 10),
-            _drawerSectionCard(
-              children: [
-                _drawerRowItem(
-                  icon: Icons.description_outlined,
-                  title: "Terms & Conditions",
-                  subtitle: "Read the app terms",
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TermsConditionScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
-                _drawerRowItem(
-                  icon: Icons.privacy_tip_outlined,
-                  title: "Privacy Policy",
-                  subtitle: "Know how your data is handled",
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PrivacyPolicyScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
-                _drawerRowItem(
-                  icon: Icons.delete_outline_rounded,
-                  title: "Delete Account",
-                  subtitle: "Permanently remove your account",
-                  iconColor: errorColor,
-                  onTap: () => _confirmAccountAction(
-                    title: "Confirm Delete",
-                    body: "Are you sure you want to delete your account?",
-                    confirmLabel: "Yes, Delete",
-                  ),
-                ),
-                const Divider(height: 1, color: Color(0xFFECE7F8)),
-                _drawerRowItem(
-                  icon: Icons.logout_rounded,
-                  title: "Logout",
-                  subtitle: "Sign out from this device",
-                  onTap: () => _confirmAccountAction(
-                    title: "Confirm Logout",
-                    body: "Are you sure you want to logout?",
-                    confirmLabel: "Yes, Logout",
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
     );
+  }
+
+  void _closeDrawer() {
+    Navigator.of(context).pop();
+  }
+
+  void _closeDrawerAndToast(String message) {
+    _closeDrawer();
+    showToast(context: context, message: message);
   }
 
   Widget _drawerChip({
@@ -389,15 +381,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String text,
     bool compact = false,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,
         vertical: compact ? 4 : 6,
       ),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.7),
+        color: isDark
+            ? const Color(0xFF252535).withOpacity(0.9)
+            : Colors.white.withOpacity(0.7),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFD6CFFA)),
+        border: Border.all(color: isDark ? const Color(0xFF3B3B50) : const Color(0xFFD6CFFA)),
       ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
@@ -412,7 +407,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               style: GoogleFonts.inter(
                 fontSize: compact ? 10.5 : 12.5,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF4E4278),
+                color: textPrimary,
               ),
             ),
           ],
@@ -425,18 +420,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<Widget> children,
     bool compact = false,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 12 : 14,
         vertical: compact ? 8 : 10,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardSurface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFEAE5F7)),
+        border: Border.all(color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFEAE5F7)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2D1769).withOpacity(0.05),
+            color: isDark
+                ? Colors.black.withOpacity(0.25)
+                : const Color(0xFF2D1769).withOpacity(0.05),
             blurRadius: 14,
             offset: const Offset(0, 4),
           ),
@@ -454,6 +452,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Color? iconColor,
     bool compact = false,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Color tint = iconColor ?? appColor;
     return InkWell(
       onTap: onTap,
@@ -485,7 +484,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: GoogleFonts.inter(
                       fontSize: compact ? 15 : 17,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFF17153E),
+                      color: textPrimary,
                     ),
                   ),
                   SizedBox(height: compact ? 1 : 2),
@@ -494,7 +493,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: GoogleFonts.inter(
                       fontSize: compact ? 12.6 : 14.3,
                       fontWeight: FontWeight.w500,
-                      color: const Color(0xFF676381),
+                      color: textSecondary,
                     ),
                   ),
                 ],
@@ -502,7 +501,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             Icon(
               Icons.chevron_right_rounded,
-              color: Color(0xFF7540E5),
+              color: isDark ? const Color(0xFFB69CFF) : const Color(0xFF7540E5),
               size: compact ? 24 : 28,
             ),
           ],
@@ -514,7 +513,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _drawerUpgradeButton({bool compact = false}) {
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => showToast(context: context, message: "Coming soon"),
+      onTap: () => _closeDrawerAndToast("Coming soon"),
       child: Container(
         height: compact ? 46 : 54,
         decoration: BoxDecoration(
@@ -555,6 +554,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required VoidCallback onTap,
     bool compact = false,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: EdgeInsets.fromLTRB(
         compact ? 12 : 14,
@@ -564,12 +564,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(
-          colors: [Color(0xFFF4F0FE), Color(0xFFE4DAFF)],
+        gradient: LinearGradient(
+          colors: isDark
+              ? const [Color(0xFF262638), Color(0xFF1E1E2D)]
+              : const [Color(0xFFF4F0FE), Color(0xFFE4DAFF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(color: Colors.white),
+        border: Border.all(color: isDark ? const Color(0xFF34344A) : Colors.white),
       ),
       child: Row(
         children: [
@@ -582,7 +584,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: GoogleFonts.inter(
                     fontSize: compact ? 14.8 : 17,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF161442),
+                    color: textPrimary,
                   ),
                 ),
                 SizedBox(height: compact ? 1 : 2),
@@ -591,7 +593,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: GoogleFonts.inter(
                     fontSize: compact ? 12.4 : 14.3,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFF676381),
+                      color: textSecondary,
                   ),
                 ),
                 SizedBox(height: compact ? 7 : 10),
@@ -646,44 +648,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _confirmAccountAction({
-    required String title,
-    required String body,
-    required String confirmLabel,
-  }) async {
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(title),
-          content: Text(body),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () async {
-                PreferenceManager.clearPreferences();
-                await FirebaseAuth.instance.signOut();
-                if (!mounted) return;
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SignUpScreen(),
-                  ),
-                  (route) => false,
-                );
-              },
-              child: Text(confirmLabel, style: TextStyle(color: errorColor)),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 
 class _NavItem {

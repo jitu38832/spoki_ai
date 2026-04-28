@@ -112,6 +112,7 @@ class _ChatlistState extends State<Chatlist> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
+      backgroundColor: surfaceBg,
       resizeToAvoidBottomInset: true,
       body: Container(
         width: double.infinity,
@@ -127,7 +128,7 @@ class _ChatlistState extends State<Chatlist> {
                 child: Row(
                   children: [
                     Material(
-                      color: Colors.white,
+                      color: cardSurface,
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
@@ -142,7 +143,7 @@ class _ChatlistState extends State<Chatlist> {
                           width: 42,
                           height: 42,
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: cardSurface,
                             shape: BoxShape.circle,
                             border: Border.all(color: surfaceMuted),
                           ),
@@ -214,7 +215,7 @@ class _ChatlistState extends State<Chatlist> {
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
-                                color: Colors.grey.shade600,
+                                color: textSecondary,
                               ),
                             ),
                           ),
@@ -274,7 +275,7 @@ class _ChatlistState extends State<Chatlist> {
       style: GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w500,
-        color: Colors.grey.shade600,
+        color: textSecondary,
       ),
     );
   }
@@ -282,9 +283,9 @@ class _ChatlistState extends State<Chatlist> {
   Widget _buildNameField() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade300, width: 1.2),
+        border: Border.all(color: surfaceMuted, width: 1.2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),
@@ -302,7 +303,7 @@ class _ChatlistState extends State<Chatlist> {
           hintStyle: GoogleFonts.inter(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.grey.shade400,
+            color: textMuted,
           ),
           border: InputBorder.none,
           contentPadding:
@@ -311,7 +312,7 @@ class _ChatlistState extends State<Chatlist> {
         style: GoogleFonts.inter(
           fontSize: 15,
           fontWeight: FontWeight.w500,
-          color: Colors.black87,
+          color: textPrimary,
         ),
       ),
     );
@@ -361,11 +362,11 @@ class _ChatlistState extends State<Chatlist> {
                     end: Alignment.centerRight,
                   )
                 : null,
-            color: isSelected ? null : Colors.white,
+            color: isSelected ? null : cardSurface,
             border: Border.all(
               color: isSelected
                   ? Colors.transparent
-                  : Colors.grey.shade300,
+                  : surfaceMuted,
               width: 1.2,
             ),
             boxShadow: isSelected
@@ -405,7 +406,7 @@ class _ChatlistState extends State<Chatlist> {
                 Icon(
                   isMale ? Icons.male_rounded : Icons.female_rounded,
                   size: 22,
-                  color: Colors.grey.shade500,
+                  color: textSecondary,
                 ),
               const SizedBox(width: 8),
               Text(
@@ -413,7 +414,7 @@ class _ChatlistState extends State<Chatlist> {
                 style: GoogleFonts.inter(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.white : Colors.grey.shade500,
+                  color: isSelected ? Colors.white : textSecondary,
                 ),
               ),
             ],
@@ -484,12 +485,12 @@ class _ChatlistState extends State<Chatlist> {
                       path,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
-                        color: Colors.grey.shade200,
+                        color: surfaceSoft,
                         alignment: Alignment.center,
                         child: Icon(
                           Icons.person,
                           size: 22,
-                          color: Colors.grey.shade400,
+                          color: textMuted,
                         ),
                       ),
                     ),
@@ -530,7 +531,7 @@ class _ChatlistState extends State<Chatlist> {
   Widget _buildOrDivider() {
     return Row(
       children: [
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+        Expanded(child: Divider(color: surfaceMuted, thickness: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
@@ -538,12 +539,12 @@ class _ChatlistState extends State<Chatlist> {
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Colors.grey.shade500,
+              color: textSecondary,
               letterSpacing: 1.2,
             ),
           ),
         ),
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+        Expanded(child: Divider(color: surfaceMuted, thickness: 1)),
       ],
     );
   }

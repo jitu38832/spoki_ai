@@ -79,8 +79,9 @@ class _QuizHistoryScreenState extends State<QuizHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       bottomNavigationBar:  Padding(
         padding: const EdgeInsets.all(8.0),
         child: Row(
@@ -168,15 +169,15 @@ class _QuizHistoryScreenState extends State<QuizHistoryScreen> {
               text: "Story Quiz History",
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: Colors.black,
+              color: isDark ? Colors.white : Colors.black,
             ),
             Image.asset("assets/images/iv_bulb.png", height: 30, width: 30),
           ],
         ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
       body: SafeArea(
         child: SingleChildScrollView(

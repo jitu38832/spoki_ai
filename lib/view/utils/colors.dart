@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:spokiai/view/utils/theme_controller.dart';
 
 class HexColor {
   static Color convertHexToColor(String hexColorCode) {
@@ -23,64 +24,84 @@ class HexColor {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Primary brand color — deep logo purple. Used for CTAs, app bar accents.
-final Color appColor = HexColor.convertHexToColor('#6D3BBF');
+Color get appColor => HexColor.convertHexToColor('#6D3BBF');
 
 /// Darker violet for pressed states, selected chips, shadows.
-final Color appColorDark = HexColor.convertHexToColor('#6D3BBF');
+Color get appColorDark => HexColor.convertHexToColor('#6D3BBF');
 
 /// Soft lavender for hover/secondary elements.
-final Color appColorLight = HexColor.convertHexToColor('#6D3BBF');
+Color get appColorLight => HexColor.convertHexToColor('#6D3BBF');
 
 /// Secondary brand color — teal / mint from the logo book.
 /// Formerly `orangeColor` — kept the name for drop-in compatibility across
 /// existing screens; the actual hue is now the brand mint.
-final Color orangeColor = HexColor.convertHexToColor('#20C5A8');
+Color get orangeColor => HexColor.convertHexToColor('#20C5A8');
 
 /// Logo teal / mint (same hue as [orangeColor], semantic name).
-final Color tealColor = HexColor.convertHexToColor('#20C5A8');
+Color get tealColor => HexColor.convertHexToColor('#20C5A8');
 
 /// Darker teal for depth / selected states.
-final Color tealDark = HexColor.convertHexToColor('#139E86');
+Color get tealDark => HexColor.convertHexToColor('#139E86');
 
 /// Soft mint background pill.
-final Color tealSoft = HexColor.convertHexToColor('#D6F6EE');
+Color get tealSoft => ThemeController.isDarkModeEnabled
+    ? const Color(0xFF1F3A36)
+    : HexColor.convertHexToColor('#D6F6EE');
 
 /// Secondary cool-accent color (used where primaryBlue was referenced).
 /// Remapped to the mid-violet from the logo so the app stays on palette.
-final Color primaryBlue = HexColor.convertHexToColor('#6D3BBF');
+Color get primaryBlue => HexColor.convertHexToColor('#6D3BBF');
 
 /// Neutral text grey.
-final Color greyColor = HexColor.convertHexToColor('#6B6B85');
+Color get greyColor => ThemeController.isDarkModeEnabled
+    ? const Color(0xFFAAAAC0)
+    : HexColor.convertHexToColor('#6B6B85');
 
 /// Subtle border / divider color for text fields and cards.
-final Color textFieldBorderColor =
-    HexColor.convertHexToColor('#D4D4D4').withOpacity(0.5);
+Color get textFieldBorderColor => ThemeController.isDarkModeEnabled
+    ? const Color(0xFF3A3A4A)
+    : HexColor.convertHexToColor('#D4D4D4').withOpacity(0.5);
 
 // ─── Surfaces & backgrounds ─────────────────────────────────────────────────
 
 /// Global soft lavender background (used behind most screens).
-final Color surfaceBg = HexColor.convertHexToColor('#FAF8FF');
+Color get surfaceBg => ThemeController.isDarkModeEnabled
+    ? const Color(0xFF121212)
+    : HexColor.convertHexToColor('#FAF8FF');
 
 /// Ultra-light violet surface for section cards.
-final Color surfaceSoft = HexColor.convertHexToColor('#F3EBFA');
+Color get surfaceSoft => ThemeController.isDarkModeEnabled
+    ? const Color(0xFF1D1D2A)
+    : HexColor.convertHexToColor('#F3EBFA');
 
 /// Muted purple surface for disabled / inactive states.
-final Color surfaceMuted = HexColor.convertHexToColor('#E9E1F5');
+Color get surfaceMuted => ThemeController.isDarkModeEnabled
+    ? const Color(0xFF2F2F3F)
+    : HexColor.convertHexToColor('#E9E1F5');
 
 /// Warm white card surface.
-final Color cardSurface = Colors.white;
+Color get cardSurface =>
+    ThemeController.isDarkModeEnabled ? const Color(0xFF1E1E1E) : Colors.white;
 
 // ─── Text ───────────────────────────────────────────────────────────────────
 
-final Color textPrimary = HexColor.convertHexToColor('#1A1033');
-final Color textSecondary = HexColor.convertHexToColor('#6C6B85');
-final Color textMuted = HexColor.convertHexToColor('#9994AE');
+Color get textPrimary => ThemeController.isDarkModeEnabled
+    ? const Color(0xFFE8E1F3)
+    : HexColor.convertHexToColor('#1A1033');
+Color get textSecondary => ThemeController.isDarkModeEnabled
+    ? const Color(0xFFBBB6CC)
+    : HexColor.convertHexToColor('#6C6B85');
+Color get textMuted => ThemeController.isDarkModeEnabled
+    ? const Color(0xFF8E8AA0)
+    : HexColor.convertHexToColor('#9994AE');
 
 // ─── Semantic status ────────────────────────────────────────────────────────
 
-final Color successColor = HexColor.convertHexToColor('#20C5A8');
-final Color warningColor = HexColor.convertHexToColor('#FFB547');
-final Color errorColor = HexColor.convertHexToColor('#E85C7B');
+Color get successColor => HexColor.convertHexToColor('#20C5A8');
+Color get warningColor => HexColor.convertHexToColor('#FFB547');
+Color get errorColor => ThemeController.isDarkModeEnabled
+    ? const Color(0xFFFF8A80)
+    : HexColor.convertHexToColor('#E85C7B');
 
 // ─── Gradients ──────────────────────────────────────────────────────────────
 
@@ -120,10 +141,15 @@ LinearGradient get tealGradient => LinearGradient(
 LinearGradient get backgroundSheetGradient => LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      colors: [
-        HexColor.convertHexToColor('#FBF8FF'),
-        HexColor.convertHexToColor('#F2E9FA'),
-      ],
+      colors: ThemeController.isDarkModeEnabled
+          ? const [
+              Color(0xFF121212),
+              Color(0xFF181823),
+            ]
+          : [
+              HexColor.convertHexToColor('#FBF8FF'),
+              HexColor.convertHexToColor('#F2E9FA'),
+            ],
     );
 
 // ─── Elevations / shadows ───────────────────────────────────────────────────
