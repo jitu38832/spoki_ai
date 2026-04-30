@@ -1470,102 +1470,146 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           }
         },
         child: Scaffold(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          appBar: AppBar(
-            leadingWidth: 42,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, size: 24),
-              onPressed: _goToDashboard,
-            ),
-            titleSpacing: 0,
-            title: Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: appColor,
-                  backgroundImage: partnerPhoto != null
-                      ? (partnerPhoto.startsWith("assets/")
-                          ? AssetImage(partnerPhoto) as ImageProvider
-                          : FileImage(File(partnerPhoto)))
-                      : null,
-                  child: partnerPhoto == null
-                      ? Icon(
-                          widget.partnerDetails["gender"]
-                                      ?.toString()
-                                      .toLowerCase() ==
-                                  "female"
-                              ? Icons.woman
-                              : Icons.man,
-                          color: Colors.white,
-                          size: 24,
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        partnerName,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Container(
-                            width: 9,
-                            height: 9,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF23C552),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            "ONLINE",
-                            style: GoogleFonts.roboto(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[500],
-                              letterSpacing: 0.8,
-                            ),
-                          ),
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              IconButton(
-                tooltip: 'Voice & TTS settings',
-                icon: const Icon(Icons.record_voice_over_outlined, size: 26),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const VoiceSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-            ],
-            elevation: 1,
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            foregroundColor: Theme.of(context).colorScheme.onSurface,
-          ),
+          backgroundColor: const Color(0xFFFAFAFC),
           body: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                padding: const EdgeInsets.fromLTRB(8, 40, 8, 4),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(5, 8, 7, 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: const Color(0xFFE9EAF2)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      InkWell(
+                        borderRadius: BorderRadius.circular(15),
+                        onTap: _goToDashboard,
+                        child: SizedBox(
+                          width: 30,
+                          height: 30,
+                          child: Icon(Icons.arrow_back, color: appColor, size: 20),
+                        ),
+                      ),
+                      CircleAvatar(
+                        radius: 17,
+                        backgroundColor: appColor,
+                        backgroundImage: partnerPhoto != null
+                            ? (partnerPhoto.startsWith("assets/")
+                                ? AssetImage(partnerPhoto) as ImageProvider
+                                : FileImage(File(partnerPhoto)))
+                            : null,
+                        child: partnerPhoto == null
+                            ? Icon(
+                                widget.partnerDetails["gender"]
+                                            ?.toString()
+                                            .toLowerCase() ==
+                                        "female"
+                                    ? Icons.woman
+                                    : Icons.man,
+                                color: Colors.white,
+                                size: 18,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              partnerName,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1D1F2C),
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              "Your AI language learning partner",
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 9.8,
+                                color: const Color(0xFF818496),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF23C552),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  "Online",
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10.3,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF2E3240),
+                                  ),
+                                ),
+                              ],
+                            )
+                          ],
+                        ),
+                      ),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(13),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const VoiceSettingsScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(13),
+                              border: Border.all(color: const Color(0xFFE0E2ED)),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 11,
+                                  backgroundColor: appColor,
+                                  child:
+                                      Icon(Icons.graphic_eq, color: Colors.white, size: 13),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.keyboard_arrow_down_rounded,
+                                    color: Color(0xFF44485A), size: 18),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                 child: Row(
                   children: [
                     Expanded(child: Divider(color: Colors.grey[350])),
@@ -1573,10 +1617,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       child: Text(
                         "Today",
-                        style: GoogleFonts.roboto(
-                          fontSize: 22,
-                          color: Colors.grey[400],
-                          fontWeight: FontWeight.w500,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: appColor,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -1719,114 +1763,151 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                 ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: Colors.grey[300]!, width: 1),
+                    color: const Color(0xFFF8F8FB),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE6E7EF), width: 1),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      GestureDetector(
-                        onTap: _toggleSuggestions,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          padding: const EdgeInsets.all(9),
-                          decoration: BoxDecoration(
-                            color: _isBulbActive
-                                ? const Color(0xFFFFD54F)
-                                : const Color(0xFFFFF3CD),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              if (_isBulbActive)
-                                BoxShadow(
-                                  color: Colors.amber.withOpacity(0.5),
-                                  blurRadius: 12,
-                                  spreadRadius: 2,
+                      SizedBox(
+                        width: 36,
+                        child: InkWell(
+                          onTap: _toggleSuggestions,
+                          borderRadius: BorderRadius.circular(14),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.lightbulb_outline_rounded,
+                                color: _isBulbActive
+                                    ? const Color(0xFFE6A800)
+                                    : const Color(0xFFD9A300),
+                                size: 17,
+                              ),
+                              const SizedBox(height: 0.5),
+                              Text(
+                                'Suggest\nReply',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(
+                                  fontSize: 7.0,
+                                  height: 1.1,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF616578),
                                 ),
+                              ),
                             ],
                           ),
-                          child: Icon(
-                            Icons.lightbulb_outline,
-                            color: _isBulbActive
-                                ? Colors.amber[900]
-                                : Colors.amber[700],
-                            size: 22,
-                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 3),
                       Expanded(
-                        child: TextField(
-                          controller: _textController,
-                          minLines: 1,
-                          maxLines: 5,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _sendTextMessage(),
-                          decoration: InputDecoration(
-                            hintText: "Type a message...",
-                            border: InputBorder.none,
-                            hintStyle: GoogleFonts.roboto(
-                              color: Colors.grey[500],
-                              fontSize: 16,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              height: 38,
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF0F5),
+                                borderRadius: BorderRadius.circular(26),
+                                border: Border.all(color: const Color(0xFFE0E2EB)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _textController,
+                                      minLines: 1,
+                                      maxLines: 4,
+                                      textInputAction: TextInputAction.send,
+                                      onSubmitted: (_) => _sendTextMessage(),
+                                      decoration: InputDecoration(
+                                        hintText: "Type a message...",
+                                        border: InputBorder.none,
+                                        hintStyle: GoogleFonts.inter(
+                                          color: const Color(0xFF9699A8),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                      ),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        color: const Color(0xFF1F2331),
+                                      ),
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.sentiment_satisfied_alt_rounded,
+                                    color: Color(0xFF7E8294),
+                                    size: 19,
+                                  ),
+                                ],
+                              ),
                             ),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 8),
-                          ),
-                          style: const TextStyle(
-                              fontSize: 16, color: Colors.black87),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      if (_textController.text.trim().isEmpty)
-                        GestureDetector(
-                          onTap:
-                              _isVoiceUploading ? null : _toggleVoiceRecording,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: _isRecordingVoice
-                                  ? Colors.redAccent
-                                  : const Color(0xFF3BA4E8),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (_isRecordingVoice
-                                          ? Colors.redAccent
-                                          : const Color(0xFF3BA4E8))
-                                      .withValues(alpha: 0.35),
-                                  blurRadius: _isRecordingVoice ? 26 : 12,
+                            const SizedBox(height: 1),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.mic_none_rounded, size: 11, color: Color(0xFF555A6F)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Tap to speak',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: const Color(0xFF555A6F),
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ],
                             ),
-                            child: _isVoiceUploading
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Icon(
-                                    _isRecordingVoice
-                                        ? Icons.stop
-                                        : Icons.mic_none,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                          ),
-                        )
-                      else
-                        IconButton(
-                          icon:
-                              const Icon(Icons.send, color: Color(0xFF3BA4E8)),
-                          onPressed: _sendTextMessage,
+                          ],
                         ),
+                      ),
+                      const SizedBox(width: 3),
+                      GestureDetector(
+                        onTap: _textController.text.trim().isEmpty
+                            ? (_isVoiceUploading ? null : _toggleVoiceRecording)
+                            : _sendTextMessage,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: _textController.text.trim().isEmpty
+                                ? (_isRecordingVoice ? Colors.redAccent : appColor)
+                                : const Color(0xFF2F63EE),
+                            shape: BoxShape.circle,
+                          ),
+                          child: _isVoiceUploading
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  _textController.text.trim().isEmpty
+                                      ? (_isRecordingVoice
+                                          ? Icons.stop_rounded
+                                          : Icons.mic_rounded)
+                                      : Icons.send_rounded,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

@@ -859,9 +859,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   fontSize: 13, fontWeight: FontWeight.w700, color: textPrimary)),
           const SizedBox(height: 6),
           _threeOptionSegment(
-            selectedIndex: state.speedSlider <= 0.9
+            selectedIndex: state.speedSlider <= 0.85
                 ? 0
-                : state.speedSlider >= 1.1
+                : state.speedSlider >= 0.95
                     ? 2
                     : 1,
             labels: const ['Slow', 'Medium', 'Fast'],
@@ -871,7 +871,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
               Icons.rocket_launch
             ],
             onChanged: (i) {
-              final value = i == 0 ? 0.8 : i == 1 ? 1.0 : 1.2;
+              final value = i == 0 ? 0.8 : i == 1 ? 0.9 : 1.0;
               unawaited(context.read<InworldTtsCubit>().setSpeedSlider(value));
             },
           ),
@@ -883,7 +883,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
           _threeOptionSegment(
             selectedIndex: state.temperatureSlider <= 0.75
                 ? 0
-                : state.temperatureSlider >= 1.25
+                : state.temperatureSlider >= 0.85
                     ? 2
                     : 1,
             labels: const ['Calm', 'Natural', 'Expressive'],
@@ -893,7 +893,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
               Icons.auto_awesome
             ],
             onChanged: (i) {
-              final value = i == 0 ? 0.5 : i == 1 ? 1.0 : 1.5;
+              final value = i == 0 ? 0.7 : i == 1 ? 0.8 : 0.9;
               unawaited(
                   context.read<InworldTtsCubit>().setTemperatureSlider(value));
             },
