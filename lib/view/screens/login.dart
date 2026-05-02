@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
@@ -350,7 +351,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                        GestureDetector(
+                       Platform.isIOS?
+                       GestureDetector(
                           onTap: () async {
                             await FirebaseAuth.instance.signOut();
                             await signInWithGoogle(context);
@@ -389,7 +391,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                        ),
+                        )
+                           :SizedBox(),
                       ],
                     );
               },

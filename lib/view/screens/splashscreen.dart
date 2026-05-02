@@ -59,9 +59,11 @@ class _SplashscreenState extends State<Splashscreen> {
               _navigated = true;
               CustomNavigator.pushAndRemoveUntil(
                 context: context,
+                // screen: const SignUpScreen(),
                 screen: const LoginScreen(),
               );
-            } else {
+            }
+            else {
               _awaitingProfileForRoute = true;
               context.read<AppCubit>().getProfile(token);
             }
