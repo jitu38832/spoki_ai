@@ -22,7 +22,7 @@ class SocketService {
 
     socket = IO.io(
       'ws://3.109.110.211',
-      // 'ws://192.168.1.4:9799',
+      // 'ws://192.168.1.7:9799',
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableAutoConnect()
@@ -137,6 +137,71 @@ class SocketService {
   }
 
   /// Poll / refresh story quiz generation status (event `storyQuizStatus`).
+  // ─── Story practice conversation (5 questions about current story) ───────
+  // Socket.IO events namespaced `storyPractice:*` (contract in agent / PR notes).
+
+  void emitStoryPracticeStart({
+    required String storyId,
+    required String quizId,
+    required String token,
+    String? storyTitle,
+  }) {
+    initSocket();
+    if (storyId.isEmpty || quizId.isEmpty || token.isEmpty) {
+      print('⚠️ storyPractice:start skipped — missing storyId, quizId, or token');
+      return;
+    }
+    final payload = <String, dynamic>{
+      'storyId': storyId,
+      'quizId': quizId,
+      'token': token,
+      if (storyTitle != null && storyTitle.trim().isNotEmpty)
+        'storyTitle': storyTitle.trim(),
+      'totalQuestions': 5,
+    };
+    void send() {
+      if (!socket.connected) return;
+      socket.emit('storyPractice:start', payload);
+      print('📤 storyPractice:start storyId=$storyId quizId=$quizId');
+    }
+
+    if (socket.connected) {
+      send();
+    } else {
+      socket.once('connect', (_) => send());
+    }
+  }
+
+  void emitStoryPracticeAnswer({
+    required String sessionId,
+    required int questionIndex,
+    required String text,
+    String? clientMessageId,
+  }) {
+    if (!isConnected) {
+      print('⚠️ Not connected - cannot storyPractice:answer');
+      return;
+    }
+    final payload = <String, dynamic>{
+      'sessionId': sessionId,
+      'questionIndex': questionIndex,
+      'message': text.trim(),
+    };
+    final id = clientMessageId?.trim();
+    if (id != null && id.isNotEmpty) payload['clientMessageId'] = id;
+    socket.emit('storyPractice:answer', payload);
+    print('📤 storyPractice:answer idx=$questionIndex');
+  }
+
+  void emitStoryPracticeEnd({required String sessionId}) {
+    if (!isConnected) {
+      print('⚠️ Not connected - cannot storyPractice:end');
+      return;
+    }
+    socket.emit('storyPractice:end', {'sessionId': sessionId});
+    print('📤 storyPractice:end');
+  }
+
   void emitGetStoryQuizStatus({
     required String storyId,
     required String token,

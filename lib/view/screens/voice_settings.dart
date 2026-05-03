@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/core/inworld_tts_voice_catalog.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
@@ -24,44 +23,14 @@ class VoiceSettingsScreen extends StatefulWidget {
 
 class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   static const String _previewPlaybackId = '__voice_preview__';
-  static const String _storySofyLocalVoiceId = '__sofy_local_tts__';
+  /// Legacy local Flutter-TTS row (removed); migrate prefs to Inworld.
+  static const String _legacyLocalStoryVoiceId = '__sofy_local_tts__';
   static const String _selectedVoicePrefKey =
       'voice_settings_selected_voice_id';
-  static const InworldTtsVoiceEntry _storySofyEntry = InworldTtsVoiceEntry(
-    voiceId: _storySofyLocalVoiceId,
-    displayName: 'Sofy',
-    subtitle: 'Classic & Friendly',
-  );
-  late final FlutterTts _sofyTts;
   String? _previewingVoiceId;
   bool _initialSlidersSet = false;
   bool _storyDefaultApplied = false;
-  bool _isSofySelected = false;
   String? _singleSelectedVoiceId;
-  bool _isSofyLocalLoading = false;
-  bool _isSofyLocalPlaying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _sofyTts = FlutterTts();
-    _sofyTts.setStartHandler(() {
-      if (!mounted) return;
-      setState(() {
-        _isSofyLocalLoading = false;
-        _isSofyLocalPlaying = true;
-      });
-    });
-    _sofyTts.setCompletionHandler(_resetSofyPreviewState);
-    _sofyTts.setCancelHandler(_resetSofyPreviewState);
-    _sofyTts.setErrorHandler((_) => _resetSofyPreviewState());
-  }
-
-  @override
-  void dispose() {
-    _sofyTts.stop();
-    super.dispose();
-  }
 
   @override
   void didChangeDependencies() {
@@ -74,17 +43,22 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     final saved =
         PreferenceManager.getStringValue(key: _selectedVoicePrefKey)?.trim();
     if (saved != null && saved.isNotEmpty) {
-      _singleSelectedVoiceId = saved;
-      _isSofySelected = saved == _storySofyLocalVoiceId;
+      if (saved == _legacyLocalStoryVoiceId) {
+        _singleSelectedVoiceId = cubit.state.effectiveVoiceId;
+        PreferenceManager.insertValue(
+          key: _selectedVoicePrefKey,
+          value: _singleSelectedVoiceId!,
+        );
+      } else {
+        _singleSelectedVoiceId = saved;
+      }
     } else {
       _singleSelectedVoiceId = cubit.state.effectiveVoiceId;
-      _isSofySelected = false;
     }
     if (widget.fromStory && !_storyDefaultApplied) {
       _storyDefaultApplied = true;
       if (_singleSelectedVoiceId == null || _singleSelectedVoiceId!.isEmpty) {
-        _isSofySelected = true;
-        _singleSelectedVoiceId = _storySofyLocalVoiceId;
+        _singleSelectedVoiceId = cubit.state.effectiveVoiceId;
       }
     }
 
@@ -111,9 +85,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     required InworldTtsState state,
     required String voiceId,
   }) {
-    if (widget.fromStory && voiceId == _storySofyLocalVoiceId) {
-      return _previewingVoiceId == voiceId && _isSofyLocalPlaying;
-    }
     final samePlayback = state.playbackId == _previewPlaybackId;
     return samePlayback &&
         state.status == InworldTtsStatus.playing &&
@@ -124,9 +95,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     required InworldTtsState state,
     required String voiceId,
   }) {
-    if (widget.fromStory && voiceId == _storySofyLocalVoiceId) {
-      return _previewingVoiceId == voiceId && _isSofyLocalLoading;
-    }
     final samePlayback = state.playbackId == _previewPlaybackId;
     return samePlayback &&
         state.status == InworldTtsStatus.loading &&
@@ -137,13 +105,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     InworldTtsVoiceEntry entry,
     InworldTtsState state,
   ) async {
-    if (widget.fromStory && entry.voiceId == _storySofyLocalVoiceId) {
-      await _toggleSofyPreview(entry);
-      return;
-    }
     final cubit = context.read<InworldTtsCubit>();
     if (!cubit.state.audioEnabled) return;
-    await _stopSofyPreviewIfAny();
     final isSameVoicePlaying = _isPreviewPlayingFor(
       state: state,
       voiceId: entry.voiceId,
@@ -167,69 +130,15 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     );
   }
 
-  void _resetSofyPreviewState() {
-    if (!mounted) return;
-    setState(() {
-      _isSofyLocalLoading = false;
-      _isSofyLocalPlaying = false;
-      if (_previewingVoiceId == _storySofyLocalVoiceId) {
-        _previewingVoiceId = null;
-      }
-    });
-  }
-
-  Future<void> _stopSofyPreviewIfAny() async {
-    if (!_isSofyLocalLoading && !_isSofyLocalPlaying) return;
-    await _sofyTts.stop();
-    _resetSofyPreviewState();
-  }
-
-  Future<void> _toggleSofyPreview(InworldTtsVoiceEntry entry) async {
-    if (_isSofyLocalLoading || _isSofyLocalPlaying) {
-      await _sofyTts.stop();
-      _resetSofyPreviewState();
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _previewingVoiceId = entry.voiceId;
-      _isSofyLocalLoading = true;
-      _isSofyLocalPlaying = false;
-    });
-    await _sofyTts.stop();
-    await _sofyTts.setLanguage('en-US');
-    await _sofyTts.setSpeechRate(0.45);
-    final res = await _sofyTts.speak(_previewTextFor(entry.displayName));
-    if (res != 1) {
-      _resetSofyPreviewState();
-    }
-  }
-
-  Future<void> _selectSofyVoice() async {
-    if (!widget.fromStory) return;
-    if (mounted) {
-      setState(() {
-        _isSofySelected = true;
-        _singleSelectedVoiceId = _storySofyLocalVoiceId;
-      });
-    }
-  }
-
   String _resolveActiveSelectedVoiceId(
     InworldTtsState state,
     String selectedMale,
     String selectedFemale,
   ) {
-    if (widget.fromStory && _isSofySelected) {
-      return _storySofyLocalVoiceId;
-    }
     final pinned = _singleSelectedVoiceId?.trim();
     if (pinned != null && pinned.isNotEmpty) {
-      if (pinned == _storySofyLocalVoiceId) {
-        return widget.fromStory
-            ? pinned
-            : (state.isPartnerFemale ? selectedFemale : selectedMale);
+      if (pinned == _legacyLocalStoryVoiceId) {
+        return state.isPartnerFemale ? selectedFemale : selectedMale;
       }
       if (widget.fromStory) {
         if (isKnownInworldVoiceId(pinned)) return pinned;
@@ -247,20 +156,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
   Future<void> _commitSelectionAndClose(String voiceId) async {
     final cubit = context.read<InworldTtsCubit>();
-    await _stopSofyPreviewIfAny();
     await cubit.stop();
-
-    if (widget.fromStory && voiceId == _storySofyLocalVoiceId) {
-      PreferenceManager.insertValue(key: _selectedVoicePrefKey, value: voiceId);
-      if (mounted) {
-        Navigator.pop(context, {
-          'playStoryTts': true,
-          'useSofy': true,
-          'selectedVoiceId': voiceId,
-        });
-      }
-      return;
-    }
 
     if (isMaleInworldVoiceId(voiceId)) {
       await cubit.setMaleVoice(voiceId);
@@ -275,7 +171,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     if (widget.fromStory) {
       Navigator.pop(context, {
         'playStoryTts': true,
-        'useSofy': false,
         'selectedVoiceId': voiceId,
       });
     } else {
@@ -295,10 +190,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
               a.playbackId != b.playbackId ||
               a.errorMessage != b.errorMessage,
           listener: (context, state) {
-            if (_previewingVoiceId == _storySofyLocalVoiceId &&
-                (_isSofyLocalLoading || _isSofyLocalPlaying)) {
-              return;
-            }
             final previewEnded = _previewingVoiceId != null &&
                 (state.playbackId != _previewPlaybackId ||
                     state.status == InworldTtsStatus.idle ||
@@ -689,29 +580,35 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             state.isPartnerFemale ? kInworldFemaleVoices : kInworldMaleVoices;
         final activeGenderTitle =
             state.isPartnerFemale ? 'Female Voices' : 'Male Voices';
-        final extraStoryCards = widget.fromStory ? 1 : 0;
-        final totalCards = widget.fromStory
-            ? (kInworldMaleVoices.length +
-                kInworldFemaleVoices.length +
-                extraStoryCards)
-            : activeGenderVoices.length;
-        final sectionCount = widget.fromStory ? 3 : 1;
         final sectionGap = 8.0;
         const headingAndGapPerSection = 28.0;
         const cardGapCompact = 8.0;
 
-        final totalCardGaps = widget.fromStory
-            ? (kInworldMaleVoices.length -
-                    1 +
-                    kInworldFemaleVoices.length -
-                    1) *
-                cardGapCompact
-            : (activeGenderVoices.length - 1) * cardGapCompact;
+        final int totalCards;
+        final int sectionCount;
+        final double totalCardGaps;
+        if (widget.fromStory) {
+          totalCards = activeGenderVoices.length;
+          sectionCount = 1;
+          totalCardGaps = activeGenderVoices.length <= 1
+              ? 0.0
+              : (activeGenderVoices.length - 1) * cardGapCompact;
+        } else {
+          totalCards =
+              kInworldMaleVoices.length + kInworldFemaleVoices.length;
+          sectionCount = 2;
+          totalCardGaps = (kInworldMaleVoices.length -
+                      1 +
+                      kInworldFemaleVoices.length -
+                      1) *
+                  cardGapCompact;
+        }
         final fixedHeight = (sectionGap * (sectionCount - 1)) +
             (headingAndGapPerSection * sectionCount) +
             totalCardGaps;
-        final rawCardHeight =
-            (constraints.maxHeight - fixedHeight) / totalCards;
+        final rawCardHeight = totalCards > 0
+            ? (constraints.maxHeight - fixedHeight) / totalCards
+            : 64.0;
 
         // Tighten aggressively on small devices to avoid overflow.
         final cardHeight = rawCardHeight.clamp(58.0, 76.0);
@@ -724,27 +621,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
           child: SingleChildScrollView(
             child: Column(
               children: [
-              if (widget.fromStory) ...[
-                _buildVoiceSection(
-                  title: 'Story Voice',
-                  isMaleSection: false,
-                  voices: const [_storySofyEntry],
-                  selectedVoiceId: activeSelectedVoiceId,
-                  state: state,
-                  cardHeight: cardHeight,
-                  compact: compact,
-                  hideSubtitle: hideSubtitle,
-                  rowGap: cardGapCompact,
-                  onSelect: (_) {
-                    unawaited(_stopSofyPreviewIfAny());
-                    unawaited(_selectSofyVoice());
-                  },
-                  onCommit: (_) {
-                    unawaited(_commitSelectionAndClose(commitSelectedVoice));
-                  },
-                ),
-                SizedBox(height: sectionGap),
-              ],
               if (showOnlyGenderVoices)
                 _buildVoiceSection(
                   title: activeGenderTitle,
@@ -757,10 +633,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   hideSubtitle: hideSubtitle,
                   rowGap: cardGapCompact,
                   onSelect: (voice) {
-                    unawaited(_stopSofyPreviewIfAny());
                     if (mounted) {
                       setState(() {
-                        _isSofySelected = false;
                         _singleSelectedVoiceId = voice.voiceId;
                       });
                     }
@@ -781,10 +655,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   hideSubtitle: hideSubtitle,
                   rowGap: cardGapCompact,
                   onSelect: (voice) {
-                    unawaited(_stopSofyPreviewIfAny());
                     if (mounted) {
                       setState(() {
-                        _isSofySelected = false;
                         _singleSelectedVoiceId = voice.voiceId;
                       });
                     }
@@ -805,10 +677,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   hideSubtitle: hideSubtitle,
                   rowGap: cardGapCompact,
                   onSelect: (voice) {
-                    unawaited(_stopSofyPreviewIfAny());
                     if (mounted) {
                       setState(() {
-                        _isSofySelected = false;
                         _singleSelectedVoiceId = voice.voiceId;
                       });
                     }

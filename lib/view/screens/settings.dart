@@ -42,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
+          iconSize: compact ? 17.6 : 19.2,
           color: scheme.onSurface,
           onPressed: () => Navigator.pop(context),
         ),
@@ -49,7 +50,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           "Settings",
           style: GoogleFonts.inter(
             color: scheme.onSurface,
-            fontSize: compact ? 22 : 24,
+            fontSize: compact ? 17.6 : 19.2,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -234,12 +235,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: Icon(
                           Icons.logout_rounded,
                           color: appColor,
-                          size: compact ? 21 : 24,
+                          size: compact ? 16.8 : 19.2,
                         ),
                         label: Text(
                           "Logout",
                           style: GoogleFonts.inter(
-                            fontSize: compact ? 16 : 17,
+                            fontSize: compact ? 12.8 : 13.6,
                             fontWeight: FontWeight.w700,
                             color: appColor,
                           ),
@@ -280,7 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title,
               style: GoogleFonts.inter(
                 color: titleColor ?? appColor,
-                fontSize: compact ? 12 : 13,
+                fontSize: compact ? 9.6 : 10.4,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -310,7 +311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title,
               style: GoogleFonts.inter(
                 color: isDark ? Colors.white : textPrimary,
-                fontSize: compact ? 17 : 18,
+                fontSize: compact ? 13.6 : 14.4,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -352,12 +353,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title,
                 style: GoogleFonts.inter(
                   color: titleColor ?? (isDark ? Colors.white : textPrimary),
-                  fontSize: compact ? 17 : 18,
+                  fontSize: compact ? 13.6 : 14.4,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: appColor, size: compact ? 22 : 26),
+            Icon(Icons.chevron_right_rounded, color: appColor, size: compact ? 17.6 : 20.8),
           ],
         ),
       ),
@@ -380,7 +381,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           end: Alignment.bottomRight,
         ),
       ),
-      child: Icon(icon, color: Colors.white, size: compact ? 20 : 23),
+      child: Icon(icon, color: Colors.white, size: compact ? 16 : 18.4),
     );
   }
 

@@ -487,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   child: const Icon(Icons.person_rounded,
-                      color: Colors.white, size: 56),
+                      color: Colors.white, size: 47.6),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -512,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Icon(
                               Icons.close_rounded,
                               color: isDark ? Colors.white : const Color(0xFF36206E),
-                              size: 18,
+                              size: 15.3,
                             ),
                           ),
                         ),
@@ -520,7 +520,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         "Mohd Salim",
                         style: GoogleFonts.inter(
-                          fontSize: 20,
+                          fontSize: 17,
                           fontWeight: FontWeight.w800,
                           color: isDark ? Colors.white : const Color(0xFF161442),
                         ),
@@ -529,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         "Learning English Daily",
                         style: GoogleFonts.inter(
-                          fontSize: 14,
+                          fontSize: 11.9,
                           fontWeight: FontWeight.w500,
                           color: isDark
                               ? Colors.white.withOpacity(0.88)
@@ -608,12 +608,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(Icons.workspace_premium_rounded,
-                              color: Colors.white, size: 22),
+                              color: Colors.white, size: 18.7),
                           const SizedBox(width: 8),
                           Text(
                             "Upgrade Now",
                             style: GoogleFonts.inter(
-                              fontSize: 22 / 1.25,
+                              fontSize: 14.96,
                               fontWeight: FontWeight.w800,
                               color: Colors.white,
                             ),
@@ -705,12 +705,12 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: iconColor),
+          Icon(icon, size: 10.2, color: iconColor),
           const SizedBox(width: 6),
           Text(
             text,
             style: GoogleFonts.inter(
-              fontSize: 14,
+              fontSize: 11.9,
               fontWeight: FontWeight.w600,
               color: textPrimary,
             ),
@@ -769,7 +769,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   end: Alignment.bottomRight,
                 ),
               ),
-              child: Icon(icon, color: Colors.white, size: 24),
+              child: Icon(icon, color: Colors.white, size: 20.4),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -779,7 +779,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     title,
                     style: GoogleFonts.inter(
-                      fontSize: 20 / 1.25,
+                      fontSize: 13.6,
                       fontWeight: FontWeight.w800,
                       color: textPrimary,
                     ),
@@ -788,7 +788,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     subtitle,
                     style: GoogleFonts.inter(
-                      fontSize: 14,
+                      fontSize: 11.9,
                       fontWeight: FontWeight.w500,
                       color: textSecondary,
                     ),
@@ -799,7 +799,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Icon(
               Icons.chevron_right_rounded,
               color: isDark ? const Color(0xFFB69CFF) : const Color(0xFF7540E5),
-              size: 28,
+              size: 23.8,
             ),
           ],
         ),
@@ -837,7 +837,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   title,
                   style: GoogleFonts.inter(
-                    fontSize: 20 / 1.25,
+                    fontSize: 13.6,
                     fontWeight: FontWeight.w800,
                     color: textPrimary,
                   ),
@@ -846,7 +846,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   subtitle,
                   style: GoogleFonts.inter(
-                    fontSize: 14,
+                    fontSize: 11.9,
                     fontWeight: FontWeight.w500,
                       color: textSecondary,
                   ),
@@ -867,7 +867,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       buttonText,
                       style: GoogleFonts.inter(
-                        fontSize: 22 / 1.35,
+                        fontSize: 13.85,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
@@ -896,7 +896,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 )
               ],
             ),
-            child: Icon(icon, color: Colors.white, size: 42),
+            child: Icon(icon, color: Colors.white, size: 35.7),
           ),
         ],
       ),

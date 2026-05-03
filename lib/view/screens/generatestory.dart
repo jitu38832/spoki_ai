@@ -9,6 +9,9 @@ import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/custom_widgets.dart';
 
+/// Create Story page typography scale (−10%).
+double _createStoryFs(double px) => px * 0.9;
+
 class GenerateStoryScreen extends StatefulWidget {
   const GenerateStoryScreen({super.key});
 
@@ -137,7 +140,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                       Text(
                         "Create Story",
                         style: GoogleFonts.inter(
-                          fontSize: 22,
+                          fontSize: _createStoryFs(22),
                           fontWeight: FontWeight.w800,
                           color: isDark ? textPrimary : _textPrimary,
                         ),
@@ -203,7 +206,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                       Text(
                         "Read the story and chat with AI to practice",
                         style: GoogleFonts.inter(
-                          fontSize: 9.5,
+                          fontSize: _createStoryFs(9.5),
                           fontWeight: FontWeight.w500,
                           color: isDark ? textSecondary : _textSecondary,
                         ),
@@ -222,7 +225,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
   Widget _sectionTitle(String text) => Text(
         text,
         style: GoogleFonts.inter(
-          fontSize: 15.5,
+          fontSize: _createStoryFs(15.5),
           fontWeight: FontWeight.w700,
           color: _textPrimary,
         ),
@@ -257,7 +260,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
           hintMaxLines: 2,
           isDense: true,
           hintStyle: GoogleFonts.inter(
-            fontSize: 10.8,
+            fontSize: _createStoryFs(10.8),
             fontWeight: FontWeight.w500,
             color: textMuted,
             height: 1.2,
@@ -267,7 +270,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
               const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
         style: GoogleFonts.inter(
-          fontSize: 14,
+          fontSize: _createStoryFs(14),
           fontWeight: FontWeight.w500,
           color: _textPrimary,
         ),
@@ -306,7 +309,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                   child: Text(
                     option,
                     style: GoogleFonts.inter(
-                      fontSize: 14,
+                      fontSize: _createStoryFs(14),
                       fontWeight: FontWeight.w700,
                       color: isSelected ? Colors.white : _textPrimary,
                     ),
@@ -353,7 +356,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                 child: Text(
                   _selectedGenre,
                   style: GoogleFonts.inter(
-                    fontSize: 16,
+                    fontSize: _createStoryFs(16),
                     fontWeight: FontWeight.w600,
                     color: _textPrimary,
                   ),
@@ -418,7 +421,8 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                           child: Text(
                             genre,
                             style: GoogleFonts.inter(
-                              fontSize: 20 / 1.2,
+                              fontSize:
+                                  _createStoryFs(20 / 1.2) * 0.85,
                               fontWeight: FontWeight.w500,
                               color: _textPrimary,
                             ),
@@ -508,7 +512,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
         child: Text(
           display,
           style: GoogleFonts.inter(
-            fontSize: 14,
+            fontSize: _createStoryFs(14),
             fontWeight: FontWeight.w700,
             color: isSelected ? Colors.white : _textPrimary,
             height: 1.2,
@@ -565,7 +569,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                     Text(
                       "Generate & Practice Story",
                       style: GoogleFonts.inter(
-                        fontSize: 17 / 1.2,
+                        fontSize: _createStoryFs(17 / 1.2),
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),

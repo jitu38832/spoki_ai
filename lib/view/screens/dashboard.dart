@@ -161,7 +161,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: Icon(
                           Icons.close_rounded,
                           color: isDark ? Colors.white : const Color(0xFF36206E),
-                          size: compact ? 16 : 18,
+                          size: compact ? 13.6 : 15.3,
                         ),
                       ),
                     ),
@@ -211,7 +211,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: Icon(
                           Icons.person_rounded,
                           color: Colors.white,
-                          size: compact ? 58 : 66,
+                          size: compact ? 49.3 : 56.1,
                         ),
                       ),
                       SizedBox(width: compact ? 10 : 14),
@@ -222,7 +222,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Text(
                               "Mohd Salim",
                               style: GoogleFonts.inter(
-                                fontSize: compact ? 18 : 22,
+                                fontSize: compact ? 15.3 : 18.7,
                                 fontWeight: FontWeight.w800,
                                 color: isDark ? Colors.white : const Color(0xFF141246),
                                 letterSpacing: 0.2,
@@ -232,7 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Text(
                               "Learning English Daily",
                               style: GoogleFonts.inter(
-                                fontSize: compact ? 12 : 14,
+                                fontSize: compact ? 10.2 : 11.9,
                                 fontWeight: FontWeight.w500,
                                 color: isDark
                                     ? Colors.white.withOpacity(0.88)
@@ -400,12 +400,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: compact ? 10 : 12, color: iconColor),
+            Icon(icon, size: compact ? 8.5 : 10.2, color: iconColor),
             SizedBox(width: compact ? 5 : 6),
             Text(
               text,
               style: GoogleFonts.inter(
-                fontSize: compact ? 10.5 : 12.5,
+                fontSize: compact ? 8.925 : 10.625,
                 fontWeight: FontWeight.w600,
                 color: textPrimary,
               ),
@@ -472,7 +472,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   end: Alignment.bottomRight,
                 ),
               ),
-              child: Icon(icon, color: Colors.white, size: compact ? 21 : 24),
+              child: Icon(icon, color: Colors.white, size: compact ? 17.85 : 20.4),
             ),
             SizedBox(width: compact ? 10 : 12),
             Expanded(
@@ -482,7 +482,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text(
                     title,
                     style: GoogleFonts.inter(
-                      fontSize: compact ? 15 : 17,
+                      fontSize: compact ? 12.75 : 14.45,
                       fontWeight: FontWeight.w800,
                       color: textPrimary,
                     ),
@@ -491,7 +491,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text(
                     subtitle,
                     style: GoogleFonts.inter(
-                      fontSize: compact ? 12.6 : 14.3,
+                      fontSize: compact ? 10.71 : 12.155,
                       fontWeight: FontWeight.w500,
                       color: textSecondary,
                     ),
@@ -502,7 +502,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Icon(
               Icons.chevron_right_rounded,
               color: isDark ? const Color(0xFFB69CFF) : const Color(0xFF7540E5),
-              size: compact ? 24 : 28,
+              size: compact ? 20.4 : 23.8,
             ),
           ],
         ),
@@ -529,12 +529,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.workspace_premium_rounded,
-                  color: Colors.white, size: 20),
+                  color: Colors.white, size: 17),
               SizedBox(width: compact ? 6 : 8),
               Text(
                 "Upgrade Now",
                 style: GoogleFonts.inter(
-                  fontSize: compact ? 15.5 : 18,
+                  fontSize: compact ? 13.175 : 15.3,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
                 ),
@@ -582,7 +582,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Text(
                   title,
                   style: GoogleFonts.inter(
-                    fontSize: compact ? 14.8 : 17,
+                    fontSize: compact ? 12.58 : 14.45,
                     fontWeight: FontWeight.w800,
                     color: textPrimary,
                   ),
@@ -591,7 +591,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Text(
                   subtitle,
                   style: GoogleFonts.inter(
-                    fontSize: compact ? 12.4 : 14.3,
+                    fontSize: compact ? 10.54 : 12.155,
                     fontWeight: FontWeight.w500,
                       color: textSecondary,
                   ),
@@ -612,7 +612,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Text(
                       buttonText,
                       style: GoogleFonts.inter(
-                        fontSize: compact ? 13.5 : 16,
+                        fontSize: compact ? 11.475 : 13.6,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
@@ -641,7 +641,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 )
               ],
             ),
-            child: Icon(icon, color: Colors.white, size: compact ? 33 : 42),
+            child: Icon(icon, color: Colors.white, size: compact ? 28.05 : 35.7),
           ),
         ],
       ),
