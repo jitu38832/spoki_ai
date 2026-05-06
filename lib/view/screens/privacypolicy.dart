@@ -1,7 +1,8 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/model/privacypolicy.dart';
+import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import 'package:spokiai/viewmodel/cubit/appcubit.dart';
@@ -25,40 +26,22 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: surfaceBg,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          "Privacy Policy",
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: true,
-        // Centers the title
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black, // Icon & text color
+        title: const Text("Privacy Policy"),
+        backgroundColor: surfaceBg,
       ),
       body: BlocConsumer<AppCubit, AppStates>(
         listener: (context, state) {
           if (state.status == AppStatus.privacyPolicySuccess) {
             PrivacyPolicyResponse policyResponse =
                 state.responseData?.response as PrivacyPolicyResponse;
-
             policyContent = policyResponse.data?.content.toString() ?? "";
-
-            print("Policy Content");
-            print(policyContent);
-            print(policyResponse.data?.content.toString());
-            setState(() {
-
-            });
+            setState(() {});
           }
 
           if (state.status == AppStatus.privacyPolicyError) {
@@ -69,26 +52,35 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
         },
         builder: (context, state) {
           if (state.status == AppStatus.privacyPolicyLoading) {
-            return const Center(child: CircularProgressIndicator());
+            return Center(child: CircularProgressIndicator(color: appColor));
           }
 
           if (policyContent.isEmpty) {
-            return const Center(child: Text("No content available"));
+            return Center(
+              child: Text(
+                "No content available",
+                style: GoogleFonts.inter(
+                    color: textSecondary, fontWeight: FontWeight.w500),
+              ),
+            );
           }
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              policyContent,
-              style: const TextStyle(
-                fontSize: 15,
-                height: 1.5,
-                color: Colors.black87,
+            child: SectionCard(
+              padding: const EdgeInsets.all(18),
+              child: Text(
+                policyContent,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.6,
+                  color: textPrimary,
+                ),
               ),
             ),
           );
         },
-      )
+      ),
     );
   }
 }

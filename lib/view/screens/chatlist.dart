@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/view/screens/chat.dart';
+import 'package:spokiai/view/screens/dashboard.dart';
 import '../utils/colors.dart';
 import '../utils/custom_navigator.dart';
 import '../utils/custom_widgets.dart';
@@ -19,20 +19,14 @@ class Chatlist extends StatefulWidget {
 class _ChatlistState extends State<Chatlist> {
   static const String _kProfileSpokenLanguage = 'profile_spoken_language';
 
-  // Mockup gradients
-  static const Color _headerPink = Color(0xFFD8449E);
-  static const Color _headerBlue = Color(0xFF4E54C8);
-  static const Color _greenStart = Color(0xFF6CB663);
-  static const Color _greenEnd = Color(0xFF8BC34A);
-  static const Color _ctaBlue = Color(0xFF4E54C8);
-  static const Color _ctaPurple = Color(0xFF7B61FF);
+  static const Color _brandPurple = Color(0xFF5A34D6);
+  static const Color _brandPurpleDark = Color(0xFF6D3BBF);
 
-  String _selectedGender = 'Male';
   String? _selectedImagePath;
 
   final TextEditingController nameController = TextEditingController();
 
-  /// Male avatars first (row 1), then female (row 2) — 3×2 grid.
+  /// Predefined avatar grid in display order.
   final List<String> _partnerLooks = [
     "assets/images/boy1.png",
     "assets/images/boy2.png",
@@ -56,21 +50,40 @@ class _ChatlistState extends State<Chatlist> {
     super.dispose();
   }
 
-  Future<void> pickImageFromGallery() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
-    if (image != null) {
-      setState(() {
-        _selectedImagePath = image.path;
-      });
-    }
-  }
-
   void selectPredefinedImage(String assetPath) {
     setState(() {
       _selectedImagePath = assetPath;
     });
+  }
+
+  bool _isMalePredefinedAvatar(String path) {
+    final idx = _partnerLooks.indexOf(path);
+    return idx >= 0 && idx < 3;
+  }
+
+  String _resolveSelectedGender() {
+    final selected = _selectedImagePath?.toLowerCase() ?? '';
+    if (selected.isEmpty) return 'Male';
+
+    // Built-in avatars: first row male, second row female.
+    if (_partnerLooks.contains(_selectedImagePath)) {
+      return _isMalePredefinedAvatar(_selectedImagePath!) ? 'Male' : 'Female';
+    }
+
+    // Gallery fallback from filename hints.
+    if (selected.contains('girl') ||
+        selected.contains('female') ||
+        selected.contains('woman')) {
+      return 'Female';
+    }
+    if (selected.contains('boy') ||
+        selected.contains('male') ||
+        selected.contains('man')) {
+      return 'Male';
+    }
+
+    // Default if no hint is found.
+    return 'Male';
   }
 
   String _languageFromProfile() {
@@ -91,11 +104,12 @@ class _ChatlistState extends State<Chatlist> {
       return;
     }
 
-    await context.read<InworldTtsCubit>().setPartnerGender(_selectedGender);
+    final selectedGender = _resolveSelectedGender();
+    await context.read<InworldTtsCubit>().setPartnerGender(selectedGender);
 
     final partnerDetails = <String, dynamic>{
       "name": nameController.text.trim(),
-      "gender": _selectedGender,
+      "gender": selectedGender,
       "language": _languageFromProfile(),
       "photo": _selectedImagePath,
     };
@@ -108,141 +122,168 @@ class _ChatlistState extends State<Chatlist> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F6FB),
       resizeToAvoidBottomInset: true,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFF5F0FF),
-              Color(0xFFEDE7F6),
-              Color(0xFFE8E0F5),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.grey.shade800,
-                    size: 20,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+              child: Row(
+                children: [
+                  Material(
+                    color: Colors.white,
+                    shape: const CircleBorder(),
+                    elevation: 2,
+                    shadowColor: Colors.black.withValues(alpha: 0.08),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const DashboardScreen(initialTabIndex: 0),
+                        ),
+                      ),
+                      child: const SizedBox(
+                        width: 42,
+                        height: 42,
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: _brandPurple,
+                          size: 18,
+                        ),
+                      ),
+                    ),
                   ),
-                  onPressed: () => Navigator.maybePop(context),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildHeaderBanner(),
+                    const SizedBox(height: 12),
+                    _buildNameCard(),
+                    const SizedBox(height: 10),
+                    _buildChooseAiCard(),
+                  ],
                 ),
               ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, viewportConstraints) {
-                    const horizontalPadding = 20.0;
-                    final contentWidth =
-                        viewportConstraints.maxWidth - horizontalPadding * 2;
-                    return SingleChildScrollView(
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: EdgeInsets.fromLTRB(
-                        horizontalPadding,
-                        12,
-                        horizontalPadding,
-                        20,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildHeaderBanner(),
-                          const SizedBox(height: 8),
-                          _buildSectionLabel('Partner Name'),
-                          const SizedBox(height: 4),
-                          _buildNameField(),
-                          const SizedBox(height: 8),
-                          _buildSectionLabel('Gender'),
-                          const SizedBox(height: 6),
-                          _buildGenderRow(),
-                          const SizedBox(height: 6),
-                          _buildSectionLabel('Select a Partner Look'),
-                          const SizedBox(height: 4),
-                          if (contentWidth > 0)
-                            _buildPartnerLookGrid(contentWidth),
-                          const SizedBox(height: 6),
-                          _buildOrDivider(),
-                          const SizedBox(height: 4),
-                          Center(
-                            child: Text(
-                              'Add Your Partner Photo',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          _buildGalleryButton(),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+            ),
+            AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.fromLTRB(
+                20,
+                6,
+                20,
+                keyboardInset > 0 ? keyboardInset + 8 : 10,
               ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(20, 10, 20, 12 + bottomInset),
-                child: _buildContinueButton(),
-              ),
-            ],
-          ),
+              child: _buildContinueButton(),
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildHeaderBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          colors: [_headerPink, _headerBlue],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _headerBlue.withValues(alpha: 0.28),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+    return Column(
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: 'Start a Conversation',
+                  style: GoogleFonts.inter(
+                    fontSize: 52,
+                    fontWeight: FontWeight.w800,
+                    color: _brandPurpleDark,
+                    height: 1.0,
+                    letterSpacing: -0.8,
+                  ),
+                ),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.top,
+                  child: Transform.translate(
+                    offset: const Offset(1, -7),
+                    child: const Icon(
+                      Icons.auto_awesome,
+                      color: _brandPurpleDark,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
-      child: Text(
-        'Start Talking with Spoki AI',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.inter(
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-          height: 1.25,
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          'Speak naturally. Improve with every reply.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF85889A),
+            height: 1.15,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text,
-      style: GoogleFonts.inter(
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-        color: Colors.grey.shade600,
+  Widget _buildNameCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE3E4EE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2EEFF),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.person_outline_rounded,
+                  color: _brandPurple,
+                  size: 17,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Name Your AI',
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF202332),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildNameField(),
+        ],
       ),
     );
   }
@@ -250,9 +291,9 @@ class _ChatlistState extends State<Chatlist> {
   Widget _buildNameField() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade300, width: 1.2),
+        border: Border.all(color: surfaceMuted, width: 1.2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),
@@ -266,11 +307,11 @@ class _ChatlistState extends State<Chatlist> {
         maxLines: 1,
         textInputAction: TextInputAction.done,
         decoration: InputDecoration(
-          hintText: 'Enter name (e.g. Alex)',
+          hintText: 'e.g. Alex',
           hintStyle: GoogleFonts.inter(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.grey.shade400,
+            color: textMuted,
           ),
           border: InputBorder.none,
           contentPadding:
@@ -279,286 +320,133 @@ class _ChatlistState extends State<Chatlist> {
         style: GoogleFonts.inter(
           fontSize: 15,
           fontWeight: FontWeight.w500,
-          color: Colors.black87,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGenderRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildGenderChip(
-            label: 'Male',
-            isMale: true,
-            isSelected: _selectedGender == 'Male',
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildGenderChip(
-            label: 'Female',
-            isMale: false,
-            isSelected: _selectedGender == 'Female',
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGenderChip({
-    required String label,
-    required bool isMale,
-    required bool isSelected,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => setState(() => _selectedGender = label),
-        borderRadius: BorderRadius.circular(14),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            gradient: isSelected
-                ? const LinearGradient(
-                    colors: [_greenStart, _greenEnd],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  )
-                : null,
-            color: isSelected ? null : Colors.white,
-            border: Border.all(
-              color: isSelected
-                  ? Colors.transparent
-                  : Colors.grey.shade300,
-              width: 1.2,
-            ),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: _greenStart.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (isSelected)
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.check_rounded,
-                    size: 16,
-                    color: _greenStart,
-                  ),
-                )
-              else
-                Icon(
-                  isMale ? Icons.male_rounded : Icons.female_rounded,
-                  size: 22,
-                  color: Colors.grey.shade500,
-                ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.white : Colors.grey.shade500,
-                ),
-              ),
-            ],
-          ),
+          color: textPrimary,
         ),
       ),
     );
   }
 
   static const int _gridCrossAxisCount = 3;
-  static const int _gridRowCount = 2;
-  /// Wider than tall cells so the grid uses less vertical space (no scroll until keyboard).
-  static const double _partnerLookAspectRatio = 1.3;
+  static const double _partnerLookAspectRatio = 1.0;
+
+  Widget _buildChooseAiCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE3E4EE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Choose Your AI',
+            style: GoogleFonts.inter(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF202332),
+            ),
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return _buildPartnerLookGrid(constraints.maxWidth);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   /// Height derived from [width] so the grid scrolls with the form when the keyboard is open.
   Widget _buildPartnerLookGrid(double width) {
     const crossGap = 10.0;
-    const mainGap = 5.0;
+    const mainGap = 12.0;
     if (width <= 0) {
       return const SizedBox.shrink();
     }
-    final cellW =
-        (width - crossGap * (_gridCrossAxisCount - 1)) / _gridCrossAxisCount;
-    final cellH = cellW / _partnerLookAspectRatio;
-    final gridHeight =
-        cellH * _gridRowCount + mainGap * (_gridRowCount - 1);
-
-    return SizedBox(
-      height: gridHeight,
-      child: GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: _gridCrossAxisCount,
-          crossAxisSpacing: crossGap,
-          mainAxisSpacing: mainGap,
-          childAspectRatio: _partnerLookAspectRatio,
-        ),
-        itemCount: _partnerLooks.length,
-        itemBuilder: (context, index) {
-          final path = _partnerLooks[index];
-          final isSelected = _selectedImagePath == path;
-          return GestureDetector(
-            onTap: () => selectPredefinedImage(path),
-            child: Stack(
-              clipBehavior: Clip.none,
-              fit: StackFit.expand,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? _greenStart : Colors.transparent,
-                      width: isSelected ? 3 : 0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: _gridCrossAxisCount,
+        crossAxisSpacing: crossGap,
+        mainAxisSpacing: mainGap,
+        childAspectRatio: _partnerLookAspectRatio,
+      ),
+      itemCount: _partnerLooks.length,
+      itemBuilder: (context, index) {
+        final path = _partnerLooks[index];
+        final isSelected = _selectedImagePath == path;
+        return GestureDetector(
+          onTap: () => selectPredefinedImage(path),
+          child: Stack(
+            clipBehavior: Clip.none,
+            fit: StackFit.expand,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected ? _brandPurple : Colors.transparent,
+                    width: isSelected ? 2.2 : 0,
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.asset(
-                      path,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: Colors.grey.shade200,
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.person,
-                          size: 22,
-                          color: Colors.grey.shade400,
-                        ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.asset(
+                    path,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: surfaceSoft,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.person,
+                        size: 22,
+                        color: textMuted,
                       ),
                     ),
                   ),
                 ),
-                if (isSelected)
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
-                        color: _greenStart,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.check_rounded,
-                        color: Colors.white,
-                        size: 14,
-                      ),
+              ),
+              if (isSelected)
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: _brandPurple,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 15,
                     ),
                   ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildOrDivider() {
-    return Row(
-      children: [
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'OR',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade500,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-      ],
-    );
-  }
-
-  Widget _buildGalleryButton() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: pickImageFromGallery,
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            gradient: const LinearGradient(
-              colors: [_ctaBlue, _ctaPurple],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: _ctaPurple.withValues(alpha: 0.35),
-                blurRadius: 14,
-                offset: const Offset(0, 8),
-              ),
+                ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.photo_camera_rounded,
-                    color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Choose from Gallery',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -570,33 +458,43 @@ class _ChatlistState extends State<Chatlist> {
         borderRadius: BorderRadius.circular(14),
         child: Ink(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            gradient: LinearGradient(
-              colors: [appColor, appColor.withValues(alpha: 0.85)],
+            borderRadius: BorderRadius.circular(16),
+            gradient: const LinearGradient(
+              colors: [_brandPurpleDark, _brandPurple],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
             ),
             boxShadow: [
               BoxShadow(
-                color: appColor.withValues(alpha: 0.35),
+                color: _brandPurple.withValues(alpha: 0.3),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: textInter(
-                text: 'Start Talking',
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
+            padding: const EdgeInsets.symmetric(vertical: 15),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                textInter(
+                  text: 'Start Conversation',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 14),
+                const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
   }
+
 }

@@ -113,6 +113,13 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
     return t.substring(0, InworldTtsConfig.maxTextLength);
   }
 
+  String _resolveModelId({String? playbackId}) {
+    final selected = state.modelId.trim();
+    if (selected.isNotEmpty) return selected;
+    if (playbackId == 'story') return InworldTtsConfig.storyModelId;
+    return InworldTtsConfig.chatModelId;
+  }
+
   List<String> _resolveVoiceIdsForPrefetch({
     String? prioritizeVoiceId,
     bool includeAllVoices = false,
@@ -153,9 +160,7 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
     final t = _truncate(text);
     if (t.isEmpty) return;
 
-    final modelId = state.modelId.isNotEmpty
-        ? state.modelId
-        : InworldTtsConfig.defaultModelId;
+    final modelId = _resolveModelId(playbackId: 'story');
     final speakingRate = displaySpeedToSpeakingRate(state.speedSlider);
     final temperature = displayTemperatureToApi(state.temperatureSlider);
     final voiceIds = _resolveVoiceIdsForPrefetch(
@@ -234,9 +239,7 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
         }
         return state.effectiveVoiceId;
       }();
-      final modelId = state.modelId.isNotEmpty
-          ? state.modelId
-          : InworldTtsConfig.defaultModelId;
+      final modelId = _resolveModelId(playbackId: playbackId);
 
       final speakingRate = displaySpeedToSpeakingRate(state.speedSlider);
       final temperature = displayTemperatureToApi(state.temperatureSlider);

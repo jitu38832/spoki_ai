@@ -8,6 +8,7 @@ import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spokiai/model/generatestory.dart';
+import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/socket.dart';
 import 'package:spokiai/view/screens/story_quiz_screen.dart';
 import 'package:spokiai/view/screens/voice_settings.dart';
@@ -20,6 +21,8 @@ import '../utils/custom_widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:open_filex/open_filex.dart';
 
 /// Quiz readiness from Socket `storyQuizStatus` (`quizGenerationStatus`).
 enum _StoryQuizGenPhase {
@@ -44,6 +47,17 @@ class StorydescriptionScreen extends StatefulWidget {
 }
 
 class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
+  static const LinearGradient _appPurpleGradient = LinearGradient(
+    colors: [Color(0xFF5A35E5), Color(0xFF7E48F4)],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+  );
+  static const String _pdfDownloadChannelId = 'story_pdf_downloads';
+  static const String _pdfDownloadChannelName = 'Story PDF Downloads';
+  static const String _pdfDownloadChannelDescription =
+      'Notifications for downloaded story PDFs';
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
   late FlutterTts flutterTts;
 
   final SocketService _storyQuizSocket = SocketService();
@@ -62,16 +76,24 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   bool _isStoryTtsPreparing = false;
   bool _isSofyStorySpeaking = false;
   bool _cancelSofyStoryPlayback = false;
+  InworldTtsCubit? _inworldTts;
   Map<String, String> availableLanguages = {};
   String? selectedLanguageCode;
 
   @override
   void initState() {
     initTts();
+    // unawaited(_initLocalNotifications());
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startStoryQuizStatusFlow();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _inworldTts ??= context.read<InworldTtsCubit>();
   }
 
   void _stopStoryQuizPoll() {
@@ -259,14 +281,22 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.grey[100],
+            color: tealSoft,
             borderRadius: BorderRadius.circular(20),
           ),
-          child: textInter(
-            text:
-                "Words: ${widget.generateStoryResponse.data?.metadata?.wordCount.toString() ?? ""}",
-            fontSize: 13,
-            color: Colors.grey[700],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.text_fields_rounded, size: 14, color: tealDark),
+              const SizedBox(width: 6),
+              textInter(
+                text:
+                    "${widget.generateStoryResponse.data?.metadata?.wordCount.toString() ?? "0"} words",
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: tealDark,
+              ),
+            ],
           ),
         ),
         Row(
@@ -525,7 +555,10 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   Future<void> stop({bool keepPreparing = false}) async {
     _cancelSofyStoryPlayback = true;
     await flutterTts.stop();
-    await context.read<InworldTtsCubit>().stop();
+    final cubit = _inworldTts;
+    if (cubit != null) {
+      await cubit.stop();
+    }
     if (mounted) {
       setState(() {
         _isSofyStorySpeaking = false;
@@ -534,6 +567,18 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
         }
       });
     }
+  }
+
+  Future<void> _exitToHome() async {
+    await stop();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const DashboardScreen(initialTabIndex: 0),
+      ),
+      (route) => false,
+    );
   }
 
   Future<int> _resolveFlutterTtsMaxInputLength() async {
@@ -624,6 +669,53 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     }
   }
 
+  // Future<void> _initLocalNotifications() async {
+  //   const androidSettings = AndroidInitializationSettings('@mipmap/app_icon');
+  //   const settings = InitializationSettings(android: androidSettings);
+  //   await _localNotifications.initialize(
+  //     settings: settings,
+  //     onDidReceiveNotificationResponse: _onNotificationTap,
+  //   );
+  //
+  //   final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
+  //       AndroidFlutterLocalNotificationsPlugin>();
+  //   await androidPlugin?.requestNotificationsPermission();
+  //   await androidPlugin?.createNotificationChannel(
+  //     const AndroidNotificationChannel(
+  //       _pdfDownloadChannelId,
+  //       _pdfDownloadChannelName,
+  //       description: _pdfDownloadChannelDescription,
+  //       importance: Importance.high,
+  //     ),
+  //   );
+  // }
+
+  Future<void> _onNotificationTap(NotificationResponse response) async {
+    final payload = response.payload?.trim();
+    if (payload == null || payload.isEmpty) return;
+    await OpenFilex.open(payload);
+  }
+
+  Future<void> _showPdfDownloadedNotification(File file) async {
+    const androidDetails = AndroidNotificationDetails(
+      _pdfDownloadChannelId,
+      _pdfDownloadChannelName,
+      channelDescription: _pdfDownloadChannelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.status,
+      visibility: NotificationVisibility.public,
+    );
+    const details = NotificationDetails(android: androidDetails);
+    // await _localNotifications.show(
+    //   id: file.path.hashCode,
+    //   title: 'Story PDF downloaded',
+    //    body: 'Tap to open ${file.uri.pathSegments.last}',
+    //   notificationDetails: details,
+    //   payload: file.path,
+    // );
+  }
+
   @override
   void dispose() {
     _stopStoryQuizPoll();
@@ -636,52 +728,71 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       _storyQuizConnectHandler = null;
     }
     flutterTts.stop();
+    unawaited(_inworldTts?.stop() ?? Future.value());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        unawaited(_exitToHome());
+      },
+      child: Scaffold(
+        backgroundColor: surfaceBg,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+            onPressed: () => unawaited(_exitToHome()),
+          ),
+          title: const Text("Story Time"),
         ),
-        title: const Text(
-          "Story Time",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-        ),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-      ),
       body: Stack(
         children: [
           // Main Layout
           Column(
             children: [
-              // Top Blue Header (Fixed)
+              // Title Header
               Container(
                 width: double.infinity,
-                decoration: const BoxDecoration(
-                  // color: Color(0xFFE3F2FD),
-                  borderRadius:
-                      BorderRadius.vertical(bottom: Radius.circular(30)),
+                margin: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                decoration: BoxDecoration(
+                  gradient: _appPurpleGradient,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: brandShadow(opacity: 0.22, blur: 16),
                 ),
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
                 child: Column(
                   children: [
-                    // Title
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        "YOUR STORY",
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     textInter(
                       text: widget.generateStoryResponse.data?.metadata?.title
                               .toString() ??
                           "",
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF6A1B9A),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
                       textAlign: TextAlign.center,
+                      maxLines: 3,
                     ),
                     // const SizedBox(height: 20),
 
@@ -991,22 +1102,30 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                             ),
                           ],
                           const SizedBox(height: 12),
-                          SizedBox(
+                          Container(
                             width: double.infinity,
-                            height: 52,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _storyQuizYesEnabled
-                                    ? appColor
-                                    : Colors.grey.shade400,
-                                disabledBackgroundColor: Colors.grey.shade400,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: _storyQuizYesEnabled ? 3 : 0,
-                              ),
-                              onPressed: _storyQuizYesEnabled
-                                  ? () {
+                            height: 54,
+                            decoration: BoxDecoration(
+                              gradient: _storyQuizYesEnabled
+                                  ? _appPurpleGradient
+                                  : LinearGradient(colors: [
+                                      surfaceMuted,
+                                      surfaceMuted
+                                    ]),
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: _storyQuizYesEnabled
+                                  ? brandShadow(
+                                      opacity: 0.22, blur: 14)
+                                  : null,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: _storyQuizYesEnabled
+                                  ? () async {
+                                      await stop();
+                                      if (!mounted) return;
                                       final quizDetails = <String, dynamic>{
                                         "storyId": widget
                                             .generateStoryResponse.data?.id
@@ -1032,11 +1151,22 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                                       );
                                     }
                                   : null,
-                              child: textInter(
-                                text: "Yes",
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                              child: Center(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.quiz_rounded,
+                                        color: Colors.white, size: 22),
+                                    const SizedBox(width: 10),
+                                    textInter(
+                                      text: "Start Quiz",
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ],
+                                ),
+                              ),
                               ),
                             ),
                           ),
@@ -1050,60 +1180,93 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
   Future<void> downloadPdfExternal(String title, String description) async {
-    final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
-    final ttf = pw.Font.ttf(fontData);
+    try {
+      final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+      final ttf = pw.Font.ttf(fontData);
 
-    final safeTitle = title
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
-        .trim()
-        .replaceAll(' ', '_');
+      final cleanedTitle = title.trim().isEmpty ? 'story' : title.trim();
+      final safeTitle = cleanedTitle
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
+          .trim()
+          .replaceAll(RegExp(r'\s+'), '_');
 
-    final pdf = pw.Document();
-
-    pdf.addPage(
-      pw.MultiPage(
-        margin: const pw.EdgeInsets.all(24),
-        build: (context) => [
-          pw.Text(
-            title,
-            style: pw.TextStyle(
-              font: ttf,
-              fontSize: 22,
-              fontWeight: pw.FontWeight.bold,
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          margin: const pw.EdgeInsets.all(24),
+          build: (context) => [
+            pw.Text(
+              cleanedTitle,
+              style: pw.TextStyle(
+                font: ttf,
+                fontSize: 22,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
-          ),
-          pw.SizedBox(height: 16),
-
-          // ✅ DESCRIPTION WILL NOW SHOW
-          pw.Text(
-            description,
-            style: pw.TextStyle(
-              font: ttf,
-              fontSize: 14,
+            pw.SizedBox(height: 16),
+            pw.Text(
+              description.trim(),
+              style: pw.TextStyle(
+                font: ttf,
+                fontSize: 14,
+              ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
 
-    final downloadsDir = await getExternalStorageDirectory();
-    if (downloadsDir == null) return;
+      final bytes = await pdf.save();
+      final candidateDirs = <Directory>[];
 
-    final externalPath = downloadsDir.path.split('Android')[0] + 'Download';
+      final downloadsDir = await getDownloadsDirectory();
+      if (downloadsDir != null) {
+        candidateDirs.add(Directory('${downloadsDir.path}/Spoki AI'));
+      }
 
-    final folder = Directory('$externalPath/Spoki AI');
-    if (!await folder.exists()) {
-      await folder.create(recursive: true);
+      if (Platform.isAndroid) {
+        candidateDirs.add(Directory('/storage/emulated/0/Download/Spoki AI'));
+      }
+
+      final appDocs = await getApplicationDocumentsDirectory();
+      candidateDirs.add(Directory('${appDocs.path}/Spoki AI'));
+
+      File? savedFile;
+      for (final folder in candidateDirs) {
+        try {
+          if (!await folder.exists()) {
+            await folder.create(recursive: true);
+          }
+          final file = File('${folder.path}/$safeTitle.pdf');
+          await file.writeAsBytes(bytes, flush: true);
+          if (await file.exists() && await file.length() > 0) {
+            savedFile = file;
+            break;
+          }
+        } catch (_) {
+          // Try next writable location.
+        }
+      }
+
+      if (savedFile == null) {
+        if (!mounted) return;
+        showToast(context: context, message: "Couldn't save PDF on this device.");
+        return;
+      }
+
+      await _showPdfDownloadedNotification(savedFile);
+      if (!mounted) return;
+      showToast(
+        context: context,
+        message: "PDF saved: ${savedFile.path}",
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showToast(context: context, message: "Failed to generate PDF.");
     }
-
-    final file = File('${folder.path}/$safeTitle.pdf');
-    await file.writeAsBytes(await pdf.save());
-
-    print('Saved to: ${file.path}');
-    showToast(context: context, message: "Pdf Saved.");
   }
 }

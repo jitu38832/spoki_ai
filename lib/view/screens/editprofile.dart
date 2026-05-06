@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/model/getprofile.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
+import 'package:spokiai/view/utils/language_options.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 
@@ -25,40 +26,6 @@ class _EditprofileState extends State<Editprofile> {
   static const String _kAge = 'profile_age';
   static const String _kEnglish = 'profile_english_level';
   static const String _kLanguage = 'profile_spoken_language';
-
-  static const List<String> _englishLevels = [
-    'Beginner',
-    'Intermediate',
-    'Fluent',
-  ];
-
-  static const List<String> _spokenLanguages = [
-    'English',
-    'Hindi',
-    'Spanish',
-    'French',
-    'Arabic',
-    'Bengali',
-    'Portuguese',
-    'Russian',
-    'Japanese',
-    'German',
-    'Korean',
-    'Italian',
-    'Turkish',
-    'Vietnamese',
-    'Thai',
-    'Urdu',
-    'Tamil',
-    'Telugu',
-    'Marathi',
-    'Gujarati',
-    'Kannada',
-    'Malayalam',
-    'Punjabi',
-    'Mandarin Chinese',
-    'Other',
-  ];
 
   String token = "";
 
@@ -160,89 +127,323 @@ class _EditprofileState extends State<Editprofile> {
     return true;
   }
 
-  InputDecoration _dropdownDecoration(String hint) {
-    return InputDecoration(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(15),
-        borderSide: BorderSide(color: textFieldBorderColor, width: 1),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(15),
-        borderSide: BorderSide(color: textFieldBorderColor, width: 1),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(15),
-        borderSide: BorderSide(color: appColor, width: 1.5),
-      ),
-      hintText: hint,
-      hintStyle: GoogleFonts.roboto(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
-        color: Colors.grey,
-      ),
-    );
+  Future<void> _saveProfile() async {
+    if (!context.mounted) return;
+    if (widget.isPostLoginSetup) {
+      if (!_validateExtrasForPostLogin()) return;
+    }
+    _persistProfileExtras();
+    if (!context.mounted) return;
+    if (widget.isPostLoginSetup) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const DashboardScreen(),
+        ),
+        (route) => false,
+      );
+    } else {
+      Navigator.pop(context);
+    }
   }
 
-  Widget _sectionLabel(String title) {
-    return textRoboto(
-      text: title,
-      fontSize: 13,
-      fontWeight: FontWeight.w400,
-      color: Colors.black,
-    );
+  String _languageDisplay(String language) {
+    if (language == 'Mandarin Chinese') return 'Chinese';
+    return language;
   }
 
-  Widget _pillChoiceRow({
-    required List<String> options,
-    required String? selected,
-    required ValueChanged<String> onSelect,
-  }) {
-    return Row(
-      children: [
-        for (var i = 0; i < options.length; i++) ...[
-          if (i > 0) const SizedBox(width: 10),
-          Expanded(
-            child: _pill(
-              label: options[i],
-              selected: selected == options[i],
-              onTap: () => onSelect(options[i]),
+  String _languageFlag(String language) {
+    switch (language) {
+      case 'English':
+        return '🇺🇸';
+      case 'Spanish':
+        return '🇪🇸';
+      case 'French':
+        return '🇫🇷';
+      case 'Mandarin Chinese':
+        return '🇨🇳';
+      case 'Arabic':
+        return '🇸🇦';
+      case 'Hindi':
+        return '🇮🇳';
+      case 'Portuguese':
+        return '🇵🇹';
+      case 'Russian':
+        return '🇷🇺';
+      case 'German':
+        return '🇩🇪';
+      case 'Japanese':
+        return '🇯🇵';
+      case 'Italian':
+        return '🇮🇹';
+      case 'Korean':
+        return '🇰🇷';
+      default:
+        return '🌐';
+    }
+  }
+
+  Future<void> _showLanguagePicker() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: surfaceBg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+            child: Column(
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: surfaceMuted,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Preferred Language',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: LanguageOptions.spokenLanguages.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final language = LanguageOptions.spokenLanguages[index];
+                      final isSelected = _selectedLanguage == language;
+                      return InkWell(
+                        onTap: () => Navigator.pop(context, language),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          height: 72,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: cardSurface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: appColor.withOpacity(0.45),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: appColor.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _languageFlag(language),
+                                  style: const TextStyle(fontSize: 28),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  _languageDisplay(language),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 18 / 1.2,
+                                    fontWeight: FontWeight.w500,
+                                    color: textPrimary,
+                                  ),
+                                ),
+                              ),
+                              if (isSelected)
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: appColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.check_rounded,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
+        );
+      },
+    );
+
+    if (selected != null && mounted) {
+      setState(() => _selectedLanguage = selected);
+    }
+  }
+
+  Widget _sectionCard({required List<Widget> children}) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: cardSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFEAE5F7),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withOpacity(0.2)
+                : const Color(0xFF2D1769).withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
         ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _sectionTitle({required IconData icon, required String title}) {
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: appColor.withOpacity(0.09),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: appColor, size: 18),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: GoogleFonts.inter(
+            fontSize: 16 / 1.2,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _pill({
+  Widget _outlinedField({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    return Container(
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 14, vertical: 1),
+      decoration: BoxDecoration(
+        color: cardSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: textFieldBorderColor),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _genderChip({
     required String label,
+    required IconData icon,
     required bool selected,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.transparent,
+    return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          height: 36,
           decoration: BoxDecoration(
-            color: selected ? appColor : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
+            gradient: selected
+                ? const LinearGradient(
+                    colors: [Color(0xFF5A35E5), Color(0xFF7E48F4)],
+                  )
+                : null,
+            color: selected ? null : cardSurface,
             border: Border.all(
-              color: selected ? appColor : textFieldBorderColor,
-              width: 1,
+              color: selected ? Colors.transparent : textFieldBorderColor,
             ),
           ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.roboto(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : Colors.black87,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: selected ? Colors.white : appColor, size: 16),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 13 / 1.2,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? Colors.white : textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _levelChip({
+    required String label,
+    required String emoji,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final double chipFontSize = label == "Intermediate" ? 11.2 : 12.2;
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 40,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: selected
+                ? const LinearGradient(
+                    colors: [Color(0xFF5A35E5), Color(0xFF7E48F4)],
+                  )
+                : null,
+            color: selected ? null : cardSurface,
+            border: Border.all(
+              color: selected ? Colors.transparent : textFieldBorderColor,
+            ),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '$emoji  $label',
+                  style: GoogleFonts.inter(
+                    fontSize: chipFontSize,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : textPrimary,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -252,21 +453,12 @@ class _EditprofileState extends State<Editprofile> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final double ageValue = (_selectedAge ?? 22).toDouble();
     return PopScope(
       canPop: !widget.isPostLoginSetup,
       child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          automaticallyImplyLeading: !widget.isPostLoginSetup,
-          title: const Text(
-            "Edit Profile",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          centerTitle: true,
-          elevation: 0,
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
-        ),
+        backgroundColor: surfaceBg,
         body: BlocConsumer<AppCubit, AppStates>(
           listener: (context, state) {
             if (state.status == AppStatus.getProfileSuccess) {
@@ -294,159 +486,347 @@ class _EditprofileState extends State<Editprofile> {
                 ),
               );
             }
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(15.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextFieldWidget(
-                    title: 'Name',
-                    controller: nameController,
-                    textFieldBorderColor: textFieldBorderColor,
-                    textInputType: TextInputType.name,
-                    textColor: Colors.black,
-                    hint: 'Enter name',
-                    maxLines: 1,
-                    hintColor: Theme.of(context).colorScheme.secondary,
-                    context: context,
-                  ),
-                  const SizedBox(height: 20),
-                  TextFieldWidget(
-                    title: 'Email Id',
-                    controller: emailController,
-                    textFieldBorderColor: textFieldBorderColor,
-                    textInputType: TextInputType.emailAddress,
-                    textColor: Colors.black,
-                    hint: 'Enter Email Id',
-                    maxLines: 1,
-                    hintColor: Theme.of(context).colorScheme.secondary,
-                    context: context,
-                  ),
-                  const SizedBox(height: 24),
-                  _sectionLabel('Gender'),
-                  const SizedBox(height: 10),
-                  _pillChoiceRow(
-                    options: const ['Male', 'Female'],
-                    selected: _selectedGender,
-                    onSelect: (v) => setState(() => _selectedGender = v),
-                  ),
-                  const SizedBox(height: 24),
-                  _sectionLabel('Age (years)'),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<int>(
-                    value: _selectedAge,
-                    isExpanded: true,
-                    decoration: _dropdownDecoration('Select age'),
-                    hint: Text(
-                      'Select age',
-                      style: GoogleFonts.roboto(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    style: GoogleFonts.roboto(
-                      fontSize: 14,
-                      color: Colors.black87,
-                    ),
-                    items: _ageYears
-                        .map(
-                          (y) => DropdownMenuItem<int>(
-                            value: y,
-                            child: Text('$y'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setState(() => _selectedAge = v),
-                  ),
-                  const SizedBox(height: 24),
-                  _sectionLabel('What is your English level?'),
-                  const SizedBox(height: 10),
-                  _pillChoiceRow(
-                    options: _englishLevels,
-                    selected: _selectedEnglishLevel,
-                    onSelect: (v) =>
-                        setState(() => _selectedEnglishLevel = v),
-                  ),
-                  const SizedBox(height: 24),
-                  _sectionLabel('Which language do you speak?'),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    value: _selectedLanguage != null &&
-                            _spokenLanguages.contains(_selectedLanguage)
-                        ? _selectedLanguage
-                        : null,
-                    isExpanded: true,
-                    decoration:
-                        _dropdownDecoration('Select language'),
-                    hint: Text(
-                      'Select language',
-                      style: GoogleFonts.roboto(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    style: GoogleFonts.roboto(
-                      fontSize: 14,
-                      color: Colors.black87,
-                    ),
-                    items: _spokenLanguages
-                        .map(
-                          (lang) => DropdownMenuItem<String>(
-                            value: lang,
-                            child: Text(lang),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) =>
-                        setState(() => _selectedLanguage = v),
-                  ),
-                  const SizedBox(height: 40),
-                  GestureDetector(
-                    onTap: () async {
-                      if (!context.mounted) return;
-                      if (widget.isPostLoginSetup) {
-                        if (!_validateExtrasForPostLogin()) return;
-                      }
-                      _persistProfileExtras();
-                      if (!context.mounted) return;
-                      if (widget.isPostLoginSetup) {
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const DashboardScreen(),
-                          ),
-                          (route) => false,
-                        );
-                      } else {
-                        Navigator.pop(context);
-                      }
-                    },
-                    child: Card(
-                      elevation: 6,
-                      shadowColor: appColor.withOpacity(0.8),
-                      child: Container(
-                        decoration: BoxDecoration(
-                            color: appColor,
-                            borderRadius:
-                                const BorderRadius.all(Radius.circular(10))),
-                        child: Padding(
-                          padding: const EdgeInsets.all(13.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              textInter(
-                                  text: "Update Profile",
-                                  fontSize: 17,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w400)
-                            ],
-                          ),
+            return SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 30, 0, 6),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(10, 30, 10, 8),
+                      decoration: BoxDecoration(
+                        color: cardSurface,
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2F2F3F)
+                              : const Color(0xFFEAE5F7),
                         ),
                       ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const SizedBox(height: 40),
+                                  Center(
+                                    child: Text(
+                                      "Upload Photo",
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: appColor,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _sectionCard(
+                                    children: [
+                                      _sectionTitle(
+                                          icon: Icons.person_rounded,
+                                          title: "Full Name"),
+                                      const SizedBox(height: 6),
+                                      _outlinedField(
+                                        child: TextField(
+                                          controller: nameController,
+                                          decoration: InputDecoration(
+                                            border: InputBorder.none,
+                                            hintText: "Enter full name",
+                                            hintStyle: TextStyle(color: textMuted),
+                                          ),
+                                          style: TextStyle(color: textPrimary),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _sectionCard(
+                                    children: [
+                                      _sectionTitle(
+                                          icon: Icons.male_rounded,
+                                          title: "Gender"),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          _genderChip(
+                                            label: "Male",
+                                            icon: Icons.person,
+                                            selected: _selectedGender == 'Male',
+                                            onTap: () => setState(
+                                                () => _selectedGender = 'Male'),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          _genderChip(
+                                            label: "Female",
+                                            icon: Icons.person_2_rounded,
+                                            selected: _selectedGender == 'Female',
+                                            onTap: () => setState(
+                                                () => _selectedGender = 'Female'),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      _sectionTitle(
+                                          icon: Icons.cake_rounded, title: "Age"),
+                                      const SizedBox(height: 6),
+                                      LayoutBuilder(
+                                        builder: (context, sliderConstraints) {
+                                          const double minAge = 13;
+                                          const double maxAge = 95;
+                                          const double bubbleSize = 44;
+                                          final double progress =
+                                              ((ageValue - minAge) /
+                                                      (maxAge - minAge))
+                                                  .clamp(0.0, 1.0);
+                                          final double bubbleLeft =
+                                              (sliderConstraints.maxWidth -
+                                                      bubbleSize) *
+                                                  progress;
+
+                                          return SizedBox(
+                                            height: 44,
+                                            child: Stack(
+                                              clipBehavior: Clip.none,
+                                              alignment: Alignment.centerLeft,
+                                              children: [
+                                                SliderTheme(
+                                                  data: SliderTheme.of(context)
+                                                      .copyWith(
+                                                    activeTrackColor: appColor,
+                                                    inactiveTrackColor:
+                                                        surfaceMuted,
+                                                    trackHeight: 7,
+                                                    thumbShape:
+                                                        const RoundSliderThumbShape(
+                                                      enabledThumbRadius: 0,
+                                                    ),
+                                                    overlayShape:
+                                                        const RoundSliderOverlayShape(
+                                                      overlayRadius: 0,
+                                                    ),
+                                                    showValueIndicator:
+                                                        ShowValueIndicator.never,
+                                                  ),
+                                                  child: Slider(
+                                                    min: minAge,
+                                                    max: maxAge,
+                                                    divisions: 82,
+                                                    value: ageValue,
+                                                    onChanged: (v) => setState(
+                                                      () => _selectedAge =
+                                                          v.round(),
+                                                    ),
+                                                  ),
+                                                ),
+                                                Positioned(
+                                                  left: bubbleLeft,
+                                                  child: Container(
+                                                    width: bubbleSize,
+                                                    height: bubbleSize,
+                                                    decoration: BoxDecoration(
+                                                      color: appColor,
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(
+                                                        color: Colors.white,
+                                                        width: 2,
+                                                      ),
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: appColor
+                                                              .withOpacity(0.22),
+                                                          blurRadius: 8,
+                                                          offset: const Offset(
+                                                              0, 3),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    alignment: Alignment.center,
+                                                    child: Text(
+                                                      '${ageValue.round()}',
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _sectionCard(
+                                    children: [
+                                      _sectionTitle(
+                                        icon: Icons.chat_bubble_rounded,
+                                        title: "English Level",
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          _levelChip(
+                                            label: "Beginner",
+                                            emoji: "🐥",
+                                            selected: _selectedEnglishLevel ==
+                                                "Beginner",
+                                            onTap: () => setState(
+                                              () => _selectedEnglishLevel =
+                                                  "Beginner",
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          _levelChip(
+                                            label: "Intermediate",
+                                            emoji: "🚀",
+                                            selected: _selectedEnglishLevel ==
+                                                "Intermediate",
+                                            onTap: () => setState(
+                                              () => _selectedEnglishLevel =
+                                                  "Intermediate",
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          _levelChip(
+                                            label: "Fluent",
+                                            emoji: "🔥",
+                                            selected:
+                                                _selectedEnglishLevel == "Fluent",
+                                            onTap: () => setState(
+                                              () => _selectedEnglishLevel =
+                                                  "Fluent",
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _sectionCard(
+                                    children: [
+                                      _sectionTitle(
+                                        icon: Icons.language_rounded,
+                                        title: "Prefered Language",
+                                      ),
+                                      const SizedBox(height: 3),
+                                      _outlinedField(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 0),
+                                        child: InkWell(
+                                          onTap: _showLanguagePicker,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          child: SizedBox(
+                                            height: 34,
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  _languageFlag(
+                                                      _selectedLanguage ?? ''),
+                                                  style: const TextStyle(
+                                                      fontSize: 18),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    _selectedLanguage == null
+                                                        ? "Select language"
+                                                        : _languageDisplay(
+                                                            _selectedLanguage!),
+                                                    style: TextStyle(
+                                                      color: _selectedLanguage ==
+                                                              null
+                                                          ? textMuted
+                                                          : textPrimary,
+                                                      fontSize: 12.5,
+                                                    ),
+                                                  ),
+                                                ),
+                                                Icon(
+                                                  Icons
+                                                      .keyboard_arrow_down_rounded,
+                                                  color: appColor,
+                                                  size: 20,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  button(
+                                    context: context,
+                                    width: double.infinity,
+                                    title: "Save Changes",
+                                    fontSize: 16 / 1.2,
+                                    fontWeight: FontWeight.w700,
+                                    isLoading: false,
+                                    icon: Icons.save_rounded,
+                                    onPressed: _saveProfile,
+                                  ),
+                                ],
+                              ),
+                              Positioned(
+                                top: -60,
+                                left: 0,
+                                right: 0,
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 104,
+                                    height: 104,
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Container(
+                                          width: 96,
+                                          height: 96,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 3.5,
+                                            ),
+                                            image: const DecorationImage(
+                                              image: AssetImage(
+                                                  'assets/images/boy1.png'),
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          right: -2,
+                                          bottom: 12,
+                                          child: Container(
+                                            width: 34,
+                                            height: 34,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: appColor,
+                                            ),
+                                            child: const Icon(
+                                              Icons.camera_alt_rounded,
+                                              color: Colors.white,
+                                              size: 16,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                  );
+                },
               ),
             );
           },

@@ -212,7 +212,7 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -224,8 +224,8 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
         ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
       body: BlocConsumer<AppCubit, AppStates>(
         listener: (context, state) {
@@ -269,7 +269,7 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
                               "",
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFF6A1B9A),
+                          color: appColor,
                           textAlign: TextAlign.center,
                         ),
                         // const SizedBox(height: 20),

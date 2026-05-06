@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:spokiai/core/inworld_tts_audio_mapping.dart';
 import 'package:spokiai/core/inworld_tts_voice_catalog.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
@@ -106,34 +105,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
   String _previewTextFor(String voiceName) {
     return 'Hi, I am $voiceName. How may I help you?';
-  }
-
-  double _valueToSliderPosition(double value) {
-    final v = value.clamp(0.0, 1.5);
-    if (v <= 1.0) {
-      // Map 0..1 into first half of the bar.
-      return v / 2.0;
-    }
-    // Map 1..1.5 into second half of the bar.
-    return 0.5 + (v - 1.0);
-  }
-
-  double _sliderPositionToValue(double position) {
-    final p = position.clamp(0.0, 1.0);
-    if (p <= 0.5) {
-      return p * 2.0;
-    }
-    return 1.0 + (p - 0.5);
-  }
-
-  double _quantizeSliderValue(double value) {
-    final v = value.clamp(0.0, 1.5);
-    if (v <= 1.0) {
-      // 0, 0.25, 0.5, 0.75, 1
-      return (v / 0.25).round() * 0.25;
-    }
-    // After 1: 1.25, 1.5
-    return 1.0 + (((v - 1.0) / 0.25).round() * 0.25);
   }
 
   bool _isPreviewPlayingFor({
@@ -315,7 +286,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE7E7EE),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: BlocConsumer<InworldTtsCubit, InworldTtsState>(
@@ -343,8 +314,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             }
           },
           builder: (context, state) {
-            final speedLabel = speedBandLabel(state.speedSlider);
-            final emotionLabel = temperatureBandLabel(state.temperatureSlider);
             final selectedMale = state.maleVoiceId.isNotEmpty
                 ? state.maleVoiceId
                 : defaultInworldMaleVoiceId;
@@ -353,32 +322,46 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 : defaultInworldFemaleVoiceId;
 
             return Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
+                  color: cardSurface,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: surfaceMuted.withOpacity(0.8)),
                 ),
                 child: Column(
                   children: [
                     _buildDialogHeader(),
-                    Divider(height: 1, color: Colors.grey.shade300),
                     Expanded(
-                      child: _buildVoiceListsArea(
-                        state: state,
-                        selectedMale: selectedMale,
-                        selectedFemale: selectedFemale,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                                decoration: BoxDecoration(
+                                  color: cardSurface,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: surfaceMuted.withOpacity(0.9),
+                                  ),
+                                ),
+                                child: _buildVoiceListsArea(
+                                  state: state,
+                                  selectedMale: selectedMale,
+                                  selectedFemale: selectedFemale,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildVoiceSettingsCard(state),
+                            const SizedBox(height: 8),
+                            _buildVoiceOnOffCard(state),
+                          ],
+                        ),
                       ),
                     ),
-                    _buildSpeedSlider(
-                      speedValue: state.speedSlider,
-                      speedLabel: speedLabel,
-                    ),
-                    _buildEmotionSlider(
-                      value: state.temperatureSlider,
-                      label: emotionLabel,
-                    ),
-                    if (!widget.fromStory) _buildDoneButton(),
                   ],
                 ),
               ),
@@ -391,20 +374,26 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
   Widget _buildDialogHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 10, 4),
-      child: SizedBox(
-        height: 34,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                width: 32,
-                height: 32,
+      padding: const EdgeInsets.fromLTRB(14, 6, 12, 6),
+      child: Column(
+        children: [
+          Container(
+            width: 44,
+            height: 4,
+            decoration: BoxDecoration(
+              color: surfaceMuted,
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF7A5CFF), Color(0xFF4C40CC)],
+                    colors: [Color(0xFF6D3BBF), Color(0xFF6D3BBF)],
                   ),
                   shape: BoxShape.circle,
                   boxShadow: [
@@ -418,27 +407,39 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 child: const Icon(
                   Icons.volume_up_rounded,
                   color: Colors.white,
-                  size: 18,
+                  size: 21,
                 ),
               ),
-            ),
-            Text(
-              'Choose Your Voice',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF242635),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Choose Your Voice',
+                      style: GoogleFonts.inter(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        color: textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'Select how your AI coach sounds',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: InkWell(
+              InkWell(
                 onTap: () => Navigator.pop(context),
                 borderRadius: BorderRadius.circular(24),
                 child: Container(
-                  width: 32,
-                  height: 32,
+                  width: 34,
+                  height: 34,
                   decoration: const BoxDecoration(
                     color: Color(0xFFF0F1F6),
                     shape: BoxShape.circle,
@@ -446,13 +447,13 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   child: const Icon(
                     Icons.close_rounded,
                     color: Color(0xFF6C6E7A),
-                    size: 18,
+                    size: 19,
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -539,12 +540,12 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         _isPreviewPlayingFor(state: state, voiceId: voice.voiceId);
     final isPreviewLoading =
         _isPreviewLoadingFor(state: state, voiceId: voice.voiceId);
-    final avatarRadius = (cardHeight * 0.26).clamp(8.0, 13.0);
-    final avatarIconSize = (avatarRadius * 1.15).clamp(9.0, 15.0);
-    final titleFont = (cardHeight * 0.27).clamp(10.8, 13.0);
-    final subtitleFont = (cardHeight * 0.22).clamp(9.0, 10.5);
-    final cardPadding = (cardHeight * 0.12).clamp(2.0, 6.0);
-    final trailingButtonSize = (cardHeight * 0.52).clamp(17.0, 24.0);
+    final avatarRadius = 20.0;
+    final avatarIconSize = 19.0;
+    final titleFont = 13.2;
+    final subtitleFont = 11.2;
+    final cardPadding = 7.0;
+    final trailingButtonSize = 39.0;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -553,11 +554,11 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         child: Container(
           padding: EdgeInsets.all(cardPadding),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8F8FC),
+            color: selected ? const Color(0xFFF5F1FE) : const Color(0xFFFAFAFD),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: selected ? appColor : const Color(0xFFE0E2EA),
-              width: selected ? 1.4 : 1,
+              width: selected ? 1.2 : 1,
             ),
           ),
           child: Row(
@@ -622,9 +623,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                         : null,
                   ),
                   if (selected) ...[
-                    SizedBox(width: compact ? 4 : 6),
+                    const SizedBox(width: 8),
                     _trailingCircleButton(
-                      icon: Icons.arrow_forward_rounded,
+                      icon: Icons.check_rounded,
                       color: Colors.white,
                       size: trailingButtonSize,
                       backgroundColor: appColor,
@@ -683,7 +684,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       builder: (context, constraints) {
         final activeSelectedVoiceId =
             _resolveActiveSelectedVoiceId(state, selectedMale, selectedFemale);
-        final showOnlyGenderVoices = !widget.fromStory;
+        final showOnlyGenderVoices = widget.fromStory;
         final activeGenderVoices =
             state.isPartnerFemale ? kInworldFemaleVoices : kInworldMaleVoices;
         final activeGenderTitle =
@@ -695,9 +696,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 extraStoryCards)
             : activeGenderVoices.length;
         final sectionCount = widget.fromStory ? 3 : 1;
-        final sectionGap = widget.fromStory ? 1.0 : 2.0;
-        const headingAndGapPerSection = 20.0;
-        final cardGapCompact = widget.fromStory ? 1.0 : 2.0;
+        final sectionGap = 8.0;
+        const headingAndGapPerSection = 28.0;
+        const cardGapCompact = 8.0;
 
         final totalCardGaps = widget.fromStory
             ? (kInworldMaleVoices.length -
@@ -713,15 +714,16 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             (constraints.maxHeight - fixedHeight) / totalCards;
 
         // Tighten aggressively on small devices to avoid overflow.
-        final cardHeight = rawCardHeight.clamp(24.0, 52.0);
-        final compact = cardHeight <= 44;
-        final hideSubtitle = widget.fromStory ? true : cardHeight <= 46;
+        final cardHeight = rawCardHeight.clamp(58.0, 76.0);
+        final compact = false;
+        final hideSubtitle = false;
         final commitSelectedVoice = activeSelectedVoiceId;
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
-          child: Column(
-            children: [
+          padding: const EdgeInsets.fromLTRB(2, 2, 2, 0),
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
               if (widget.fromStory) ...[
                 _buildVoiceSection(
                   title: 'Story Voice',
@@ -816,173 +818,238 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   },
                 ),
               ],
-            ],
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildEmotionSlider({
-    required double value,
-    required String label,
-  }) {
-    final v = value.clamp(0.0, 1.5);
-    final sliderPos = _valueToSliderPosition(v);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+
+  Widget _buildVoiceSettingsCard(InworldTtsState state) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: cardSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: surfaceMuted.withOpacity(0.9)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Emotion',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF2C2E3A),
-            ),
-          ),
-          SizedBox(
-            height: 16,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: appColor,
-                inactiveTrackColor: const Color(0xFFD5D7E3),
-                thumbColor: appColor,
-                trackHeight: 2,
-                overlayShape: SliderComponentShape.noOverlay,
-              ),
-              child: Slider(
-                value: sliderPos,
-                min: 0,
-                max: 1.0,
-                divisions: 100,
-                onChanged: (next) => unawaited(
-                  context.read<InworldTtsCubit>().setTemperatureSlider(
-                        _quantizeSliderValue(_sliderPositionToValue(next)),
-                      ),
-                ),
-              ),
-            ),
-          ),
-          _buildRangeMarkers(),
-          const SizedBox(height: 0),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSpeedSlider({
-    required double speedValue,
-    required String speedLabel,
-  }) {
-    final v = speedValue.clamp(0.0, 1.5);
-    final sliderPos = _valueToSliderPosition(v);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Speed',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF2C2E3A),
-            ),
-          ),
-          SizedBox(
-            height: 16,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: appColor,
-                inactiveTrackColor: const Color(0xFFD5D7E3),
-                thumbColor: appColor,
-                trackHeight: 2,
-                overlayShape: SliderComponentShape.noOverlay,
-              ),
-              child: Slider(
-                value: sliderPos,
-                min: 0,
-                max: 1.0,
-                divisions: 100,
-                onChanged: (next) => unawaited(
-                  context.read<InworldTtsCubit>().setSpeedSlider(
-                        _quantizeSliderValue(_sliderPositionToValue(next)),
-                      ),
-                ),
-              ),
-            ),
-          ),
-          _buildRangeMarkers(),
-          const SizedBox(height: 0),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRangeMarkers() {
-    return Row(
-      children: [
-        Text(
-          '0.0x',
-          style: GoogleFonts.inter(
-            fontSize: 9,
-            color: const Color(0xFF7D8191),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          '1.0x',
-          style: GoogleFonts.inter(
-            fontSize: 9,
-            color: const Color(0xFF7D8191),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          '1.5x',
-          style: GoogleFonts.inter(
-            fontSize: 9,
-            color: const Color(0xFF7D8191),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDoneButton() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-      child: SizedBox(
-        width: double.infinity,
-        height: 30,
-        child: InkWell(
-          onTap: () => Navigator.pop(context),
-          borderRadius: BorderRadius.circular(26),
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF7B5DF6), Color(0xFF3A33AF)],
-              ),
-              borderRadius: BorderRadius.circular(26),
-            ),
-            child: Center(
-              child: Text(
-                'Done',
+          Row(
+            children: [
+              Icon(Icons.settings_outlined, color: appColor, size: 18),
+              const SizedBox(width: 7),
+              Text(
+                'Voice Settings',
                 style: GoogleFonts.inter(
-                  fontSize: 11,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: textPrimary,
                 ),
               ),
-            ),
+            ],
           ),
-        ),
+          const SizedBox(height: 8),
+          Text('Speed',
+              style: GoogleFonts.inter(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: textPrimary)),
+          const SizedBox(height: 6),
+          _threeOptionSegment(
+            selectedIndex: state.speedSlider <= 0.85
+                ? 0
+                : state.speedSlider >= 0.95
+                    ? 2
+                    : 1,
+            labels: const ['Slow', 'Medium', 'Fast'],
+            icons: const [
+              Icons.slow_motion_video,
+              Icons.graphic_eq,
+              Icons.rocket_launch
+            ],
+            onChanged: (i) {
+              final value = i == 0 ? 0.8 : i == 1 ? 0.9 : 1.0;
+              unawaited(context.read<InworldTtsCubit>().setSpeedSlider(value));
+            },
+          ),
+          const SizedBox(height: 8),
+          Text('Emotion',
+              style: GoogleFonts.inter(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: textPrimary)),
+          const SizedBox(height: 6),
+          _threeOptionSegment(
+            selectedIndex: state.temperatureSlider <= 0.75
+                ? 0
+                : state.temperatureSlider >= 0.85
+                    ? 2
+                    : 1,
+            labels: const ['Calm', 'Natural', 'Expressive'],
+            icons: const [
+              Icons.eco_outlined,
+              Icons.sentiment_satisfied,
+              Icons.auto_awesome
+            ],
+            onChanged: (i) {
+              final value = i == 0 ? 0.7 : i == 1 ? 0.8 : 0.9;
+              unawaited(
+                  context.read<InworldTtsCubit>().setTemperatureSlider(value));
+            },
+          ),
+        ],
       ),
     );
   }
+
+  Widget _threeOptionSegment({
+    required int selectedIndex,
+    required List<String> labels,
+    required List<IconData> icons,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7FC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3E4EE)),
+      ),
+      child: Row(
+        children: List.generate(labels.length, (index) {
+          final selected = selectedIndex == index;
+          return Expanded(
+            child: InkWell(
+              onTap: () => onChanged(index),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFEFE9FD) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icons[index],
+                      size: 16,
+                      color: selected ? appColor : const Color(0xFF6E7183),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      labels[index],
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? appColor : const Color(0xFF3E4051),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildVoiceOnOffCard(InworldTtsState state) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: cardSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: surfaceMuted.withOpacity(0.9)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.volume_up_rounded, color: const Color(0xFF22A766), size: 18),
+              const SizedBox(width: 7),
+              Text(
+                'Voice On / Off',
+                style: GoogleFonts.inter(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _voiceSwitchRow(
+            icon: Icons.volume_up_rounded,
+            title: 'Voice On',
+            enabled: state.audioEnabled,
+            iconBg: appColor,
+            onChanged: (v) =>
+                unawaited(context.read<InworldTtsCubit>().setAudioEnabled(v)),
+          ),
+          const SizedBox(height: 6),
+          _voiceSwitchRow(
+            icon: Icons.volume_off_rounded,
+            title: 'Voice Off',
+            enabled: !state.audioEnabled,
+            iconBg: const Color(0xFF9AA0B6),
+            onChanged: (v) =>
+                unawaited(context.read<InworldTtsCubit>().setAudioEnabled(!v)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _voiceSwitchRow({
+    required IconData icon,
+    required String title,
+    required bool enabled,
+    required Color iconBg,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFD),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3E4EE)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 33,
+            height: 33,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: Colors.white, size: 19),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: textPrimary,
+              ),
+            ),
+          ),
+          Switch(
+            value: enabled,
+            activeColor: Colors.white,
+            activeTrackColor: appColor,
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: const Color(0xFFA9ABC3),
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
 }
