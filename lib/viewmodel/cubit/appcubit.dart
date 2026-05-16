@@ -24,6 +24,22 @@ class AppCubit extends Cubit<AppStates> {
     }
   }
 
+  Future<void> appleLogin(Map<String, dynamic> appleDetails) async {
+    emit(state.copyWith(status: AppStatus.appleLoginLoading));
+    try {
+      ResponseData response = await repository.appleLogin(appleDetails);
+      emit(state.copyWith(
+          status: AppStatus.appleLoginSuccess, responseData: response));
+    } on ErrorData catch (errorData) {
+      emit(state.copyWith(
+          status: AppStatus.appleLoginError, errorData: errorData, error: null));
+    } catch (e) {
+      emit(state.copyWith(
+          status: AppStatus.appleLoginError, error: e.toString(), errorData: null));
+    }
+  }
+
+
   Future<void> checkStatus() async {
     emit(state.copyWith(status: AppStatus.checkStatusLoading));
     try {

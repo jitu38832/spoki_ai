@@ -128,6 +128,13 @@ class _StoryQuizScreenState extends State<StoryQuizScreen> {
           totalQuestions: questions.length,
           quizResult: const JsonEncoder.withIndent(' ').convert(result),
           id: quesResponse.data?.id.toString() ?? "",
+          storyId: widget.quizDetails['storyId']?.toString() ??
+              quesResponse.data?.inputParams?.storyId ??
+              quesResponse.data?.story?.id ??
+              '',
+          storyTitle: quesResponse.data?.story?.title ??
+              quesResponse.data?.metadata?.title ??
+              '',
         ),
       ),
     );

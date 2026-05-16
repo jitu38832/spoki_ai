@@ -1,8 +1,10 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:spokiai/view/screens/splashscreen.dart';
 import 'package:spokiai/view/utils/app_theme.dart';
+import 'package:spokiai/view/utils/firebase_options.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/view/utils/theme_controller.dart';
 import 'package:spokiai/data/local/inworld_tts_preferences.dart';
@@ -17,7 +19,9 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform
+  );
   await InworldTtsConfig.loadSecrets();
   await PreferenceManager.init();
   ThemeController.loadFromPreferences();

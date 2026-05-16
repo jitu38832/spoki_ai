@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +8,7 @@ import 'package:dots_indicator/dots_indicator.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:spokiai/model/getprofile.dart';
 import 'package:spokiai/model/googlelogin.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
@@ -73,8 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Expanded(
                         child: Container(
-                          margin:
-                              const EdgeInsets.symmetric(horizontal: 24),
+                          margin: const EdgeInsets.symmetric(horizontal: 24),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(24),
                             color: Colors.white,
@@ -105,8 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
                       Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 28),
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
                         child: Text(
                           _slides[index].tagline,
                           textAlign: TextAlign.center,
@@ -320,25 +321,57 @@ class _LoginScreenState extends State<LoginScreen> {
                 final loading = state.status == AppStatus.loginLoading ||
                     (_routeAfterGoogleProfile &&
                         state.status == AppStatus.getProfileLoading);
-                return button(
-                  context: context,
-                  width: double.infinity,
-                  title: loading ? 'Signing you in…' : 'Continue with Google',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  isLoading: loading,
-                  icon: Icons.g_mobiledata_rounded,
-                  onPressed: () async {
-                    if (!_termsAccepted) {
-                      showToast(
-                        context: context,
-                        message: "Please accept the terms to continue",
-                      );
-                      return;
-                    }
-                    await FirebaseAuth.instance.signOut();
-                    await signInWithGoogle(context);
-                  },
+                return Column(
+                  children: [
+                    button(
+                      context: context,
+                      width: double.infinity,
+                      title:
+                          loading ? 'Signing you in…' : 'Continue with Google',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      isLoading: loading,
+                      icon: Icons.g_mobiledata_rounded,
+                      onPressed: () async {
+                        if (!_termsAccepted) {
+                          showToast(
+                            context: context,
+                            message: "Please accept the terms to continue",
+                          );
+                          return;
+                        }
+                        await FirebaseAuth.instance.signOut();
+                        await signInWithGoogle(context);
+                      },
+                    ),
+                    SizedBox(
+                      height: 10,
+                    ),
+                    Platform.isIOS
+                        ? button(
+                            context: context,
+                            width: double.infinity,
+                            title: loading
+                                ? 'Signing you in…'
+                                : 'Continue with Apple',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            isLoading: loading,
+                            icon: Icons.apple,
+                            onPressed: () async {
+                              if (!_termsAccepted) {
+                                showToast(
+                                  context: context,
+                                  message:
+                                      "Please accept the terms to continue",
+                                );
+                                return;
+                              }
+                              await signInWithApple(context);
+                            },
+                          )
+                        : SizedBox(),
+                  ],
                 );
               },
             ),
@@ -368,10 +401,28 @@ class _LoginScreenState extends State<LoginScreen> {
       showToast(context: context, message: "Google Sign-In failed.");
     }
   }
+
+  Future<void> signInWithApple(BuildContext context) async {
+    final credential = await SignInWithApple.getAppleIDCredential(
+      scopes: [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
+    );
+
+    Map<String, dynamic> appleDetails = {
+      "name": credential.givenName,
+      "email": credential.email,
+      "identityToken": credential.userIdentifier
+    };
+
+    BlocProvider.of<AppCubit>(context).appleLogin(appleDetails);
+  }
 }
 
 class _SlideData {
   final String image;
   final String tagline;
+
   _SlideData({required this.image, required this.tagline});
 }

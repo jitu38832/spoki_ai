@@ -17,7 +17,7 @@ import 'package:spokiai/model/submitquiz.dart';
 import 'package:spokiai/model/wordmeaning.dart';
 import 'package:spokiai/viewmodel/repository/response_status.dart';
 
-
+import '../../model/applelogin.dart';
 import '../../model/checkstatus.dart';
 import '../../model/privacypolicy.dart';
 import '../../view/utils/preference_manager.dart';
@@ -28,9 +28,7 @@ class AppRepository {
     try {
       final response = await ApiService()
           .sendRequest
-          .post("auth/firebase/login", data: {
-            "idToken":idToken
-      });
+          .post("auth/firebase/login", data: {"idToken": idToken});
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -43,11 +41,28 @@ class AppRepository {
     }
   }
 
-  Future<ResponseData> checkStatus() async {
+  Future<ResponseData> appleLogin(Map<String, dynamic> appleDetails) async {
+    print("Apple details in repo");
+    print(appleDetails);
     try {
       final response = await ApiService()
           .sendRequest
-          .get("users/key");
+          .post("auth/apple-login", data: appleDetails);
+
+      return ResponseData(
+          statusCode: response.statusCode,
+          response: AppleLoginResponse.fromJson(response.data));
+    } on DioException catch (e) {
+      throw ErrorData(
+          message: e.response!.data['error'], code: e.response!.statusCode);
+    } on Exception catch (_) {
+      rethrow;
+    }
+  }
+
+  Future<ResponseData> checkStatus() async {
+    try {
+      final response = await ApiService().sendRequest.get("users/key");
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -60,7 +75,8 @@ class AppRepository {
     }
   }
 
-  Future<ResponseData> generateStory(String token, Map<String, dynamic> storyDetails) async {
+  Future<ResponseData> generateStory(
+      String token, Map<String, dynamic> storyDetails) async {
     try {
       final response = await ApiService(token: token)
           .sendRequest
@@ -96,10 +112,8 @@ class AppRepository {
 
   Future<ResponseData> privacyPolicy(String type) async {
     try {
-      final response = await ApiService()
-          .sendRequest
-          .get("contents/${type}", data: {
-      });
+      final response =
+          await ApiService().sendRequest.get("contents/${type}", data: {});
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -116,8 +130,7 @@ class AppRepository {
     try {
       final response = await ApiService(token: token)
           .sendRequest
-          .get("story-writing/history", data: {
-      });
+          .get("story-writing/history", data: {});
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -132,9 +145,9 @@ class AppRepository {
 
   Future<ResponseData> historyDescription(String token, String id) async {
     try {
-      final response = await ApiService(token: token)
-          .sendRequest
-          .get("story-writing/history/${id}",);
+      final response = await ApiService(token: token).sendRequest.get(
+            "story-writing/history/${id}",
+          );
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -149,9 +162,9 @@ class AppRepository {
 
   Future<ResponseData> getProfile(String token) async {
     try {
-      final response = await ApiService(token: token)
-          .sendRequest
-          .get("users/me",);
+      final response = await ApiService(token: token).sendRequest.get(
+            "users/me",
+          );
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -164,11 +177,12 @@ class AppRepository {
     }
   }
 
-  Future<ResponseData> getQuizQues(String token, Map<String, dynamic> quizDetails) async {
+  Future<ResponseData> getQuizQues(
+      String token, Map<String, dynamic> quizDetails) async {
     try {
-      final response = await ApiService(token: token, )
-          .sendRequest
-          .post("quiz/generate",data: quizDetails);
+      final response = await ApiService(
+        token: token,
+      ).sendRequest.post("quiz/generate", data: quizDetails);
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -181,11 +195,12 @@ class AppRepository {
     }
   }
 
-  Future<ResponseData> submitQuiz(String token,String id, String quizDetails) async {
+  Future<ResponseData> submitQuiz(
+      String token, String id, String quizDetails) async {
     try {
-      final response = await ApiService(token: token, )
-          .sendRequest
-          .post("quiz/${id}/submit",data: quizDetails);
+      final response = await ApiService(
+        token: token,
+      ).sendRequest.post("quiz/${id}/submit", data: quizDetails);
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -215,9 +230,9 @@ class AppRepository {
       final encodedWord = Uri.encodeComponent(word);
       final language = _dictionaryLanguageQueryParam();
       final response = await ApiService().sendRequest.get(
-            "dictionary/$encodedWord",
-            queryParameters: <String, dynamic>{'language': language},
-          );
+        "dictionary/$encodedWord",
+        queryParameters: <String, dynamic>{'language': language},
+      );
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -230,14 +245,11 @@ class AppRepository {
     }
   }
 
-
-
-
   Future<ResponseData> bannerList() async {
     try {
-      final response = await ApiService()
-          .sendRequest
-          .get("banners",);
+      final response = await ApiService().sendRequest.get(
+            "banners",
+          );
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -250,12 +262,11 @@ class AppRepository {
     }
   }
 
-
   Future<ResponseData> deleteStory(String token, String id) async {
     try {
-      final response = await ApiService(token: token)
-          .sendRequest
-          .delete("story-writing/history/${id}",);
+      final response = await ApiService(token: token).sendRequest.delete(
+            "story-writing/history/${id}",
+          );
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -270,9 +281,9 @@ class AppRepository {
 
   Future<ResponseData> quizHistory(String token, String id) async {
     try {
-      final response = await ApiService(token: token)
-          .sendRequest
-          .get("quiz-responses/history/story/${id}",);
+      final response = await ApiService(token: token).sendRequest.get(
+            "quiz-responses/history/story/${id}",
+          );
 
       return ResponseData(
           statusCode: response.statusCode,
@@ -284,6 +295,4 @@ class AppRepository {
       rethrow;
     }
   }
-
-
 }

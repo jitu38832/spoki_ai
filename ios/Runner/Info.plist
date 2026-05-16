@@ -34,6 +34,22 @@
 	<string>This app requires access to your photo library so you can select a profile photo.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>This app needs access to speech recognition to convert your voice to text.</string>
+
+	<key>CFBundleURLTypes</key>
+    	<array>
+    		<dict>
+    			<key>CFBundleURLSchemes</key>
+    			<array>
+    				<string>fb1910127483071032</string>
+    				<string>com.googleusercontent.apps.303958409160-4fefip198pj40lmmgq6m8dvcqu2a22c9</string>
+    			</array>
+    		</dict>
+    	</array>
+	<key>GIDClientID</key>
+    	<string>303958409160-4fefip198pj40lmmgq6m8dvcqu2a22c9.apps.googleusercontent.com</string>
+
+    	<key>FirebaseAppDelegateProxyEnabled</key>
+    	<false/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
