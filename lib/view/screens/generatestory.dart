@@ -30,6 +30,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
   static const Color _purpleB = Color(0xFF8F4FFF);
   final TextEditingController _storyDescriptionController =
       TextEditingController();
+  final FocusNode _storyTopicFocusNode = FocusNode();
   String _selectedLength = 'Short';
   String _selectedGenre = 'Fantasy';
   final String _selectedStyle = 'Random';
@@ -94,7 +95,16 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
   @override
   void dispose() {
     _storyDescriptionController.dispose();
+    _storyTopicFocusNode.dispose();
     super.dispose();
+  }
+
+  void _unfocusTopicField() {
+    if (_storyTopicFocusNode.hasFocus) {
+      _storyTopicFocusNode.unfocus();
+    } else {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
   }
 
   @override
@@ -252,6 +262,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
       ),
       child: TextField(
         controller: _storyDescriptionController,
+        focusNode: _storyTopicFocusNode,
         maxLines: 1,
         minLines: 1,
         cursorColor: appColor,
@@ -290,7 +301,10 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
           final isSelected = _selectedLength == option;
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _selectedLength = option),
+              onTap: () {
+                _unfocusTopicField();
+                setState(() => _selectedLength = option);
+              },
               behavior: HitTestBehavior.opaque,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -332,7 +346,10 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
         border: Border.all(color: _border),
       ),
       child: InkWell(
-        onTap: _showGenrePicker,
+        onTap: () {
+          _unfocusTopicField();
+          _showGenrePicker();
+        },
         borderRadius: BorderRadius.circular(14),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -375,6 +392,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
   }
 
   Future<void> _showGenrePicker() async {
+    _unfocusTopicField();
     final selected = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: surfaceBg,
@@ -490,6 +508,7 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
         .replaceAll(')', '');
     return GestureDetector(
       onTap: () {
+        _unfocusTopicField();
         setState(() {
           _selectedLevel = isSelected ? null : label;
         });

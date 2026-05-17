@@ -26,6 +26,19 @@ class _EditprofileState extends State<Editprofile> {
   static const String _kAge = 'profile_age';
   static const String _kEnglish = 'profile_english_level';
   static const String _kLanguage = 'profile_spoken_language';
+  static const String _kAvatar = 'profile_avatar_asset';
+
+  /// Predefined avatar options shown in picker dialog.
+  static const List<String> _avatarOptionPaths = <String>[
+    'assets/images/male-1.jpeg',
+    'assets/images/male-2.jpeg',
+    'assets/images/male-3.jpeg',
+    'assets/images/male-4.jpeg',
+    'assets/images/female-1.jpeg',
+    'assets/images/female-2.jpeg',
+    'assets/images/female-3.jpeg',
+    'assets/images/female-4.jpeg',
+  ];
 
   String token = "";
 
@@ -38,9 +51,38 @@ class _EditprofileState extends State<Editprofile> {
   int? _selectedAge;
   String? _selectedEnglishLevel;
   String? _selectedLanguage;
+  String _selectedAvatarPath = _avatarOptionPaths.first;
 
   List<int> get _ageYears =>
       List<int>.generate(83, (i) => i + 13); // 13–95
+
+  String? get _normalizedGender {
+    final g = _selectedGender?.trim().toLowerCase();
+    if (g == 'male') return 'male';
+    if (g == 'female') return 'female';
+    return null;
+  }
+
+  bool _isMaleAvatar(String path) => path.contains('/male-');
+
+  List<String> _avatarOptionsByGender() {
+    final g = _normalizedGender;
+    if (g == 'male') {
+      return _avatarOptionPaths.where(_isMaleAvatar).toList();
+    }
+    if (g == 'female') {
+      return _avatarOptionPaths.where((p) => !_isMaleAvatar(p)).toList();
+    }
+    return <String>[];
+  }
+
+  void _syncAvatarToSelectedGender() {
+    final filtered = _avatarOptionsByGender();
+    if (filtered.isEmpty) return;
+    if (!filtered.contains(_selectedAvatarPath)) {
+      _selectedAvatarPath = filtered.first;
+    }
+  }
 
   @override
   void initState() {
@@ -67,6 +109,13 @@ class _EditprofileState extends State<Editprofile> {
     if (_selectedLanguage != null && _selectedLanguage!.isEmpty) {
       _selectedLanguage = null;
     }
+    final avatar = PreferenceManager.getStringValue(key: _kAvatar);
+    if (avatar != null &&
+        avatar.isNotEmpty &&
+        _avatarOptionPaths.contains(avatar)) {
+      _selectedAvatarPath = avatar;
+    }
+    _syncAvatarToSelectedGender();
   }
 
   void _applyProfileDataFromApi(Data? d) {
@@ -83,6 +132,7 @@ class _EditprofileState extends State<Editprofile> {
     if (d.spokenLanguage != null && d.spokenLanguage!.isNotEmpty) {
       _selectedLanguage = d.spokenLanguage;
     }
+    _syncAvatarToSelectedGender();
   }
 
   void _persistProfileExtras() {
@@ -101,6 +151,10 @@ class _EditprofileState extends State<Editprofile> {
     PreferenceManager.insertValue(
       key: _kLanguage,
       value: _selectedLanguage ?? '',
+    );
+    PreferenceManager.insertValue(
+      key: _kAvatar,
+      value: _selectedAvatarPath,
     );
   }
 
@@ -181,6 +235,141 @@ class _EditprofileState extends State<Editprofile> {
       default:
         return '🌐';
     }
+  }
+
+  Future<void> _showAvatarPickerDialog() async {
+    final List<String> genderAvatars = _avatarOptionsByGender();
+    if (genderAvatars.isEmpty) {
+      showToast(context: context, message: 'Please select gender first');
+      return;
+    }
+
+    String tempSelected = _selectedAvatarPath;
+    if (!genderAvatars.contains(tempSelected)) {
+      tempSelected = genderAvatars.first;
+    }
+
+    final String? selectedPath = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (dialogContext) {
+        return Dialog(
+          elevation: 0,
+          backgroundColor: const Color(0xFF111B2D),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: StatefulBuilder(
+            builder: (context, setDialogState) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Change avatar',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => Navigator.pop(dialogContext),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.close_rounded,
+                              color: Colors.white70,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: genderAvatars.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1,
+                      ),
+                      itemBuilder: (context, index) {
+                        final path = genderAvatars[index];
+                        final selected = path == tempSelected;
+                        return InkWell(
+                          onTap: () {
+                            setDialogState(() {
+                              tempSelected = path;
+                            });
+                          },
+                          customBorder: const CircleBorder(),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0xFFFF8A65)
+                                    : Colors.white.withOpacity(0.28),
+                                width: selected ? 2.6 : 1.2,
+                              ),
+                              image: DecorationImage(
+                                image: AssetImage(path),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: appColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(dialogContext, tempSelected),
+                        child: Text(
+                          'Use this avatar',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selectedPath == null) return;
+    setState(() {
+      _selectedAvatarPath = selectedPath;
+    });
   }
 
   Future<void> _showLanguagePicker() async {
@@ -297,7 +486,7 @@ class _EditprofileState extends State<Editprofile> {
   Widget _sectionCard({required List<Widget> children}) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(
         color: cardSurface,
         borderRadius: BorderRadius.circular(18),
@@ -325,13 +514,13 @@ class _EditprofileState extends State<Editprofile> {
     return Row(
       children: [
         Container(
-          width: 30,
+          width: 28,
           height: 30,
           decoration: BoxDecoration(
             color: appColor.withOpacity(0.09),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(9),
           ),
-          child: Icon(icon, color: appColor, size: 18),
+          child: Icon(icon, color: appColor, size: 17),
         ),
         const SizedBox(width: 8),
         Text(
@@ -372,7 +561,7 @@ class _EditprofileState extends State<Editprofile> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          height: 36,
+          height: 35,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             gradient: selected
@@ -388,7 +577,7 @@ class _EditprofileState extends State<Editprofile> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: selected ? Colors.white : appColor, size: 16),
+              Icon(icon, color: selected ? Colors.white : appColor, size: 15),
               const SizedBox(width: 5),
               Text(
                 label,
@@ -417,7 +606,7 @@ class _EditprofileState extends State<Editprofile> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          height: 40,
+          height: 38,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             gradient: selected
@@ -432,7 +621,7 @@ class _EditprofileState extends State<Editprofile> {
           ),
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 3),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
@@ -489,30 +678,32 @@ class _EditprofileState extends State<Editprofile> {
             return SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 30, 0, 6),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(10, 30, 10, 8),
-                      decoration: BoxDecoration(
-                        color: cardSurface,
-                        borderRadius: BorderRadius.circular(26),
-                        border: Border.all(
-                          color: isDark
-                              ? const Color(0xFF2F2F3F)
-                              : const Color(0xFFEAE5F7),
+                  return SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 34, 0, 10),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(10, 20, 10, 8),
+                        decoration: BoxDecoration(
+                          color: cardSurface,
+                          borderRadius: BorderRadius.circular(26),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF2F2F3F)
+                                : const Color(0xFFEAE5F7),
+                          ),
                         ),
-                      ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const SizedBox(height: 40),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                  const SizedBox(height: 36),
                                   Center(
                                     child: Text(
-                                      "Upload Photo",
+                                      'Choose profile photo',
                                       style: GoogleFonts.inter(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
@@ -520,13 +711,50 @@ class _EditprofileState extends State<Editprofile> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
+                                  Center(
+                                    child: InkWell(
+                                      onTap: _showAvatarPickerDialog,
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: cardSurface,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: appColor.withOpacity(0.5),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.cloud_upload_rounded,
+                                              color: appColor,
+                                              size: 16,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Upload avatar',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: appColor,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
                                   _sectionCard(
                                     children: [
                                       _sectionTitle(
                                           icon: Icons.person_rounded,
                                           title: "Full Name"),
-                                      const SizedBox(height: 6),
+                                      const SizedBox(height: 4),
                                       _outlinedField(
                                         child: TextField(
                                           controller: nameController,
@@ -534,47 +762,55 @@ class _EditprofileState extends State<Editprofile> {
                                             border: InputBorder.none,
                                             hintText: "Enter full name",
                                             hintStyle: TextStyle(color: textMuted),
+                                            isDense: true,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 8),
                                           ),
                                           style: TextStyle(color: textPrimary),
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   _sectionCard(
                                     children: [
                                       _sectionTitle(
                                           icon: Icons.male_rounded,
                                           title: "Gender"),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 3),
                                       Row(
                                         children: [
                                           _genderChip(
                                             label: "Male",
                                             icon: Icons.person,
                                             selected: _selectedGender == 'Male',
-                                            onTap: () => setState(
-                                                () => _selectedGender = 'Male'),
+                                            onTap: () => setState(() {
+                                              _selectedGender = 'Male';
+                                              _syncAvatarToSelectedGender();
+                                            }),
                                           ),
                                           const SizedBox(width: 8),
                                           _genderChip(
                                             label: "Female",
                                             icon: Icons.person_2_rounded,
                                             selected: _selectedGender == 'Female',
-                                            onTap: () => setState(
-                                                () => _selectedGender = 'Female'),
+                                            onTap: () => setState(() {
+                                              _selectedGender = 'Female';
+                                              _syncAvatarToSelectedGender();
+                                            }),
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 3),
                                       _sectionTitle(
                                           icon: Icons.cake_rounded, title: "Age"),
-                                      const SizedBox(height: 6),
+                                      const SizedBox(height: 4),
                                       LayoutBuilder(
                                         builder: (context, sliderConstraints) {
                                           const double minAge = 13;
                                           const double maxAge = 95;
-                                          const double bubbleSize = 44;
+                                          const double bubbleSize = 40;
                                           final double progress =
                                               ((ageValue - minAge) /
                                                       (maxAge - minAge))
@@ -585,7 +821,7 @@ class _EditprofileState extends State<Editprofile> {
                                                   progress;
 
                                           return SizedBox(
-                                            height: 44,
+                                            height: 40,
                                             child: Stack(
                                               clipBehavior: Clip.none,
                                               alignment: Alignment.centerLeft,
@@ -621,34 +857,40 @@ class _EditprofileState extends State<Editprofile> {
                                                 ),
                                                 Positioned(
                                                   left: bubbleLeft,
-                                                  child: Container(
-                                                    width: bubbleSize,
-                                                    height: bubbleSize,
-                                                    decoration: BoxDecoration(
-                                                      color: appColor,
-                                                      shape: BoxShape.circle,
-                                                      border: Border.all(
-                                                        color: Colors.white,
-                                                        width: 2,
-                                                      ),
-                                                      boxShadow: [
-                                                        BoxShadow(
-                                                          color: appColor
-                                                              .withOpacity(0.22),
-                                                          blurRadius: 8,
-                                                          offset: const Offset(
-                                                              0, 3),
+                                                  child: IgnorePointer(
+                                                    child: Container(
+                                                      width: bubbleSize,
+                                                      height: bubbleSize,
+                                                      decoration: BoxDecoration(
+                                                        color: appColor,
+                                                        shape: BoxShape.circle,
+                                                        border: Border.all(
+                                                          color: Colors.white,
+                                                          width: 2,
                                                         ),
-                                                      ],
-                                                    ),
-                                                    alignment: Alignment.center,
-                                                    child: Text(
-                                                      '${ageValue.round()}',
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        color: Colors.white,
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: appColor
+                                                                .withOpacity(
+                                                                    0.22),
+                                                            blurRadius: 8,
+                                                            offset:
+                                                                const Offset(
+                                                                    0, 3),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      alignment:
+                                                          Alignment.center,
+                                                      child: Text(
+                                                        '${ageValue.round()}',
+                                                        style:
+                                                            GoogleFonts.inter(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color: Colors.white,
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
@@ -660,14 +902,14 @@ class _EditprofileState extends State<Editprofile> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   _sectionCard(
                                     children: [
                                       _sectionTitle(
                                         icon: Icons.chat_bubble_rounded,
                                         title: "English Level",
                                       ),
-                                      const SizedBox(height: 6),
+                                      const SizedBox(height: 4),
                                       Row(
                                         children: [
                                           _levelChip(
@@ -706,14 +948,14 @@ class _EditprofileState extends State<Editprofile> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   _sectionCard(
                                     children: [
                                       _sectionTitle(
                                         icon: Icons.language_rounded,
                                         title: "Prefered Language",
                                       ),
-                                      const SizedBox(height: 3),
+                                      const SizedBox(height: 2),
                                       _outlinedField(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 12, vertical: 0),
@@ -722,7 +964,7 @@ class _EditprofileState extends State<Editprofile> {
                                           borderRadius:
                                               BorderRadius.circular(10),
                                           child: SizedBox(
-                                            height: 34,
+                                            height: 30,
                                             child: Row(
                                               children: [
                                                 Text(
@@ -760,7 +1002,7 @@ class _EditprofileState extends State<Editprofile> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 5),
                                   button(
                                     context: context,
                                     width: double.infinity,
@@ -769,6 +1011,7 @@ class _EditprofileState extends State<Editprofile> {
                                     fontWeight: FontWeight.w700,
                                     isLoading: false,
                                     icon: Icons.save_rounded,
+                                    height: 48,
                                     onPressed: _saveProfile,
                                   ),
                                 ],
@@ -778,52 +1021,31 @@ class _EditprofileState extends State<Editprofile> {
                                 left: 0,
                                 right: 0,
                                 child: Center(
-                                  child: SizedBox(
-                                    width: 104,
-                                    height: 104,
-                                    child: Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        Container(
-                                          width: 96,
-                                          height: 96,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: Colors.white,
-                                              width: 3.5,
-                                            ),
-                                            image: const DecorationImage(
-                                              image: AssetImage(
-                                                  'assets/images/boy1.png'),
-                                              fit: BoxFit.cover,
-                                            ),
-                                          ),
+                                  child: InkWell(
+                                    onTap: _showAvatarPickerDialog,
+                                    customBorder: const CircleBorder(),
+                                    child: Container(
+                                      width: 96,
+                                      height: 96,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 3.5,
                                         ),
-                                        Positioned(
-                                          right: -2,
-                                          bottom: 12,
-                                          child: Container(
-                                            width: 34,
-                                            height: 34,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: appColor,
-                                            ),
-                                            child: const Icon(
-                                              Icons.camera_alt_rounded,
-                                              color: Colors.white,
-                                              size: 16,
-                                            ),
-                                          ),
+                                        image: DecorationImage(
+                                          image:
+                                              AssetImage(_selectedAvatarPath),
+                                          fit: BoxFit.cover,
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ],
                           ),
+                    ),
                     ),
                   );
                 },

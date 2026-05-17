@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:spokiai/view/screens/contact_support_screen.dart';
+import 'package:spokiai/view/screens/feedback_screen.dart';
 import 'package:spokiai/view/screens/privacypolicy.dart';
 import 'package:spokiai/view/screens/signup.dart';
 import 'package:spokiai/view/screens/termscondition.dart';
@@ -140,10 +142,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             isDark: isDark,
                             icon: Icons.headset_mic_rounded,
                             title: "Contact Support",
-                            onTap: () => showToast(
-                              context: context,
-                              message: "Support coming soon",
-                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const ContactSupportScreen(),
+                                ),
+                              );
+                            },
                           ),
                           _sectionDivider(isDark: isDark),
                           _actionTile(
@@ -151,10 +158,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             isDark: isDark,
                             icon: Icons.forum_outlined,
                             title: "Send Feedback",
-                            onTap: () => showToast(
-                              context: context,
-                              message: "Feedback coming soon",
-                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const FeedbackScreen(),
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),

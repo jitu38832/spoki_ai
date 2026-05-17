@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../repository/app_repository.dart';
 import '../repository/response_status.dart';
@@ -271,5 +270,45 @@ class AppCubit extends Cubit<AppStates> {
           error: e.toString(),
           errorData: null));
     }
+  }
+
+  /// [type] must be `bug` or `suggestion` (server contract).
+  Future<void> submitFeedback({
+    required String token,
+    required String type,
+    required String title,
+    required String description,
+    String? screenshotPath,
+  }) async {
+    emit(state.copyWith(status: AppStatus.submitFeedbackLoading));
+    try {
+      final response = await repository.submitFeedback(
+        token: token,
+        type: type,
+        title: title,
+        description: description,
+        screenshotPath: screenshotPath,
+      );
+      emit(state.copyWith(
+        status: AppStatus.submitFeedbackSuccess,
+        responseData: response,
+      ));
+    } on ErrorData catch (errorData) {
+      emit(state.copyWith(
+        status: AppStatus.submitFeedbackError,
+        errorData: errorData,
+        error: null,
+      ));
+    } catch (e) {
+      emit(state.copyWith(
+        status: AppStatus.submitFeedbackError,
+        error: e.toString(),
+        errorData: null,
+      ));
+    }
+  }
+
+  void resetToInitial() {
+    emit(const AppStates());
   }
 }

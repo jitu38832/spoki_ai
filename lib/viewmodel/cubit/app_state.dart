@@ -77,8 +77,9 @@ enum AppStatus {
   privacyPolicyError,
   privacyPolicySuccess,
 
-
-
+  submitFeedbackLoading,
+  submitFeedbackSuccess,
+  submitFeedbackError,
 
 }
 

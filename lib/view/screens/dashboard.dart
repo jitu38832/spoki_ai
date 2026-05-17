@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:spokiai/view/screens/chatlist.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
 import 'package:spokiai/view/screens/settings.dart';
 import 'package:spokiai/view/screens/storyhistory.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
+import 'package:spokiai/view/utils/preference_manager.dart';
 import 'home.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -17,7 +19,15 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  static const String _streakDaysKey = 'home_drawer_streak_days';
+  static const String _streakLastOpenKey = 'home_drawer_streak_last_open';
+  static const String _androidAppLink =
+      'https://play.google.com/store/apps/details?id=com.spokiai&pcampaignid=web_share';
+  static const String _iosAppLink =
+      'https://apps.apple.com/ng/app/spoki-ai/id6760191046';
+
   int _selectedIndex = 0;
+  int _streakDays = 1;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   List<Widget> get _screens => [
@@ -40,7 +50,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (widget.initialTabIndex != null) {
       _selectedIndex = widget.initialTabIndex!;
     }
+    _updateDrawerStreak();
   }
+
+  void _updateDrawerStreak() {
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final String todayKey = _dateStorageKey(today);
+
+    final String? lastOpenKey =
+        PreferenceManager.getStringValue(key: _streakLastOpenKey);
+    int streak = PreferenceManager.getIntegerValue(key: _streakDaysKey) ?? 1;
+
+    if (lastOpenKey == null) {
+      streak = 1;
+    } else {
+      final DateTime? lastOpenDate = _dateFromStorageKey(lastOpenKey);
+      if (lastOpenDate != null) {
+        final int dayDiff = today.difference(lastOpenDate).inDays;
+        if (dayDiff == 1) {
+          streak += 1;
+        } else if (dayDiff > 1) {
+          streak = 1;
+        }
+      } else {
+        streak = 1;
+      }
+    }
+
+    PreferenceManager.insertValue(key: _streakDaysKey, value: streak);
+    PreferenceManager.insertValue(key: _streakLastOpenKey, value: todayKey);
+
+    if (mounted) {
+      setState(() => _streakDays = streak);
+    } else {
+      _streakDays = streak;
+    }
+  }
+
+  String _dateStorageKey(DateTime date) {
+    final String month = date.month.toString().padLeft(2, '0');
+    final String day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  DateTime? _dateFromStorageKey(String value) {
+    final List<String> parts = value.split('-');
+    if (parts.length != 3) return null;
+
+    final int? year = int.tryParse(parts[0]);
+    final int? month = int.tryParse(parts[1]);
+    final int? day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+
+    return DateTime(year, month, day);
+  }
+
+  String get _streakText => '$_streakDays ${_streakDays == 1 ? "Day" : "Days"} Streak';
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +185,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildAppDrawer() {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final bool compact = MediaQuery.of(context).size.height <= 820;
+    final String avatarPath =
+        PreferenceManager.getStringValue(key: 'profile_avatar_asset') ?? '';
+    final bool hasAvatarAsset = avatarPath.startsWith('assets/images/');
     return Drawer(
       width: MediaQuery.of(context).size.width * 0.97,
       backgroundColor: isDark ? const Color(0xFF14141D) : const Color(0xFFF4EFFB),
@@ -207,12 +276,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
+                          image: hasAvatarAsset
+                              ? DecorationImage(
+                                  image: AssetImage(avatarPath),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
                         ),
-                        child: Icon(
-                          Icons.person_rounded,
-                          color: Colors.white,
-                          size: compact ? 49.3 : 56.1,
-                        ),
+                        child: hasAvatarAsset
+                            ? null
+                            : Icon(
+                                Icons.person_rounded,
+                                color: Colors.white,
+                                size: compact ? 49.3 : 56.1,
+                              ),
                       ),
                       SizedBox(width: compact ? 10 : 14),
                       Expanded(
@@ -228,44 +305,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 letterSpacing: 0.2,
                               ),
                             ),
-                            SizedBox(height: compact ? 4 : 6),
-                            Text(
-                              "Learning English Daily",
-                              style: GoogleFonts.inter(
-                                fontSize: compact ? 10.2 : 11.9,
-                                fontWeight: FontWeight.w500,
-                                color: isDark
-                                    ? Colors.white.withOpacity(0.88)
-                                    : const Color(0xFF4F4B77),
-                              ),
-                            ),
-                            SizedBox(height: compact ? 6 : 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _drawerChip(
-                                    icon: Icons.circle,
-                                    iconColor: const Color(0xFF8ED06F),
-                                    text: "Active Learner",
-                                    compact: true,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  width: 1,
-                                  height: compact ? 20 : 22,
-                                  color: const Color(0xFFB4A8DB),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: _drawerChip(
-                                    icon: Icons.local_fire_department_rounded,
-                                    iconColor: const Color(0xFFFF7A33),
-                                    text: "3 Day Streak",
-                                    compact: true,
-                                  ),
-                                ),
-                              ],
+                            SizedBox(height: compact ? 10 : 12),
+                            _drawerChip(
+                              icon: Icons.local_fire_department_rounded,
+                              iconColor: const Color(0xFFFF7A33),
+                              text: _streakText,
+                              compact: true,
                             ),
                           ],
                         ),
@@ -283,14 +328,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.person_rounded,
                   title: "My Profile",
                   subtitle: "View & edit your details",
-                  onTap: () {
+                  onTap: () async {
                     _closeDrawer();
-                    Navigator.push(
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => const Editprofile(),
                       ),
                     );
+                    if (mounted) setState(() {});
                   },
                   compact: compact,
                 ),
@@ -317,7 +363,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.group_rounded,
                   title: "Invite Friends",
                   subtitle: "Earn rewards & grow together",
-                  onTap: () => _closeDrawerAndToast("Coming soon"),
+                  onTap: () async {
+                    _closeDrawer();
+                    await Future.delayed(const Duration(milliseconds: 120));
+                    if (!mounted) return;
+                    await _showShareAppDialog();
+                  },
                   compact: compact,
                 ),
                 Divider(
@@ -346,7 +397,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               title: "Learn Daily on WhatsApp",
               subtitle: "Get tips & updates daily",
               buttonText: "Join Now",
-              icon: Icons.call,
+              iconAssetPath: 'assets/images/whatsapp-png.png',
               onTap: () => _closeDrawerAndToast("Coming soon"),
               compact: compact,
             ),
@@ -355,7 +406,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               title: "Practice on Telegram",
               subtitle: "Free discussions & speaking",
               buttonText: "Join Now",
-              icon: Icons.send_rounded,
+              iconAssetPath: 'assets/images/telegram-icon-png.webp',
               onTap: () => _closeDrawerAndToast("Coming soon"),
               compact: compact,
             ),
@@ -373,6 +424,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _closeDrawerAndToast(String message) {
     _closeDrawer();
     showToast(context: context, message: message);
+  }
+
+  Future<void> _showShareAppDialog() async {
+    final String? selectedLink = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Share app link',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _shareOptionTile(
+              icon: Icons.android_rounded,
+              title: 'Share Android link',
+              onTap: () => Navigator.pop(context, _androidAppLink),
+            ),
+            const SizedBox(height: 8),
+            _shareOptionTile(
+              icon: Icons.phone_iphone_rounded,
+              title: 'Share iOS link',
+              onTap: () => Navigator.pop(context, _iosAppLink),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (selectedLink == null || selectedLink.isEmpty) return;
+    await Share.share(selectedLink, subject: 'Spoki AI app link');
+  }
+
+  Widget _shareOptionTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: appColor.withOpacity(0.22)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: appColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _drawerChip({
@@ -550,7 +667,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String title,
     required String subtitle,
     required String buttonText,
-    required IconData icon,
+    required String iconAssetPath,
     required VoidCallback onTap,
     bool compact = false,
   }) {
@@ -623,25 +740,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           SizedBox(width: compact ? 8 : 10),
-          Container(
+          SizedBox(
             width: compact ? 68 : 84,
             height: compact ? 68 : 84,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF5A35E5), Color(0xFF7E48F4)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+            child: Padding(
+              padding: EdgeInsets.all(compact ? 6 : 8),
+              child: Image.asset(
+                iconAssetPath,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.image_not_supported_rounded,
+                  color: appColor,
+                  size: compact ? 22 : 27,
+                ),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: appColor.withOpacity(0.18),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                )
-              ],
             ),
-            child: Icon(icon, color: Colors.white, size: compact ? 28.05 : 35.7),
           ),
         ],
       ),

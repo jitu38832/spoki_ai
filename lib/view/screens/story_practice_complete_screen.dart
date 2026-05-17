@@ -741,11 +741,11 @@ class _StartNewStoryButton extends StatelessWidget {
   }
 }
 
-/// App main logo (same asset as splash).
+/// App main logo.
 class _HeroIllustration extends StatelessWidget {
   const _HeroIllustration();
 
-  static const String _logoAsset = 'assets/images/app_icon.jpeg';
+  static const String _logoAsset = 'assets/images/logo.png';
 
   @override
   Widget build(BuildContext context) {

@@ -114,9 +114,9 @@ class InworldTtsCubit extends Cubit<InworldTtsState> {
   }
 
   String _resolveModelId({String? playbackId}) {
-    final selected = state.modelId.trim();
-    if (selected.isNotEmpty) return selected;
-    if (playbackId == 'story') return InworldTtsConfig.storyModelId;
+    if (playbackId == 'story' || playbackId == '__story_voice_preview__') {
+      return InworldTtsConfig.storyModelId;
+    }
     return InworldTtsConfig.chatModelId;
   }
 

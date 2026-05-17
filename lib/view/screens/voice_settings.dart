@@ -23,11 +23,15 @@ class VoiceSettingsScreen extends StatefulWidget {
 
 class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   static const String _previewPlaybackId = '__voice_preview__';
+  static const String _storyPreviewPlaybackId = '__story_voice_preview__';
   /// Legacy local Flutter-TTS row (removed); migrate prefs to Inworld.
   static const String _legacyLocalStoryVoiceId = '__sofy_local_tts__';
   static const String _selectedVoicePrefKey =
       'voice_settings_selected_voice_id';
   String? _previewingVoiceId;
+  String get _activePreviewPlaybackId =>
+      widget.fromStory ? _storyPreviewPlaybackId : _previewPlaybackId;
+
   bool _initialSlidersSet = false;
   bool _storyDefaultApplied = false;
   String? _singleSelectedVoiceId;
@@ -38,8 +42,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     if (_initialSlidersSet) return;
     _initialSlidersSet = true;
     final cubit = context.read<InworldTtsCubit>();
-    unawaited(cubit.setSpeedSlider(1.0));
-    unawaited(cubit.setTemperatureSlider(1.0));
     final saved =
         PreferenceManager.getStringValue(key: _selectedVoicePrefKey)?.trim();
     if (saved != null && saved.isNotEmpty) {
@@ -85,7 +87,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     required InworldTtsState state,
     required String voiceId,
   }) {
-    final samePlayback = state.playbackId == _previewPlaybackId;
+    final samePlayback = state.playbackId == _activePreviewPlaybackId;
     return samePlayback &&
         state.status == InworldTtsStatus.playing &&
         _previewingVoiceId == voiceId;
@@ -95,7 +97,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     required InworldTtsState state,
     required String voiceId,
   }) {
-    final samePlayback = state.playbackId == _previewPlaybackId;
+    final samePlayback = state.playbackId == _activePreviewPlaybackId;
     return samePlayback &&
         state.status == InworldTtsStatus.loading &&
         _previewingVoiceId == voiceId;
@@ -106,6 +108,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     InworldTtsState state,
   ) async {
     final cubit = context.read<InworldTtsCubit>();
+    final previewPlaybackId = _activePreviewPlaybackId;
     if (!cubit.state.audioEnabled) return;
     final isSameVoicePlaying = _isPreviewPlayingFor(
       state: state,
@@ -125,7 +128,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
     }
     await cubit.speak(
       _previewTextFor(entry.displayName),
-      playbackId: _previewPlaybackId,
+      playbackId: previewPlaybackId,
       voiceIdForPreview: entry.voiceId,
     );
   }
@@ -191,7 +194,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
               a.errorMessage != b.errorMessage,
           listener: (context, state) {
             final previewEnded = _previewingVoiceId != null &&
-                (state.playbackId != _previewPlaybackId ||
+                (state.playbackId != _activePreviewPlaybackId ||
                     state.status == InworldTtsStatus.idle ||
                     state.status == InworldTtsStatus.error);
             if (previewEnded && mounted) {
@@ -575,7 +578,10 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       builder: (context, constraints) {
         final activeSelectedVoiceId =
             _resolveActiveSelectedVoiceId(state, selectedMale, selectedFemale);
-        final showOnlyGenderVoices = widget.fromStory;
+        // Correct behavior:
+        // - Story screen: show all voices (male + female)
+        // - Chat screen: show voices according to selected partner gender
+        final showOnlyGenderVoices = !widget.fromStory;
         final activeGenderVoices =
             state.isPartnerFemale ? kInworldFemaleVoices : kInworldMaleVoices;
         final activeGenderTitle =
@@ -587,7 +593,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         final int totalCards;
         final int sectionCount;
         final double totalCardGaps;
-        if (widget.fromStory) {
+        if (!widget.fromStory) {
           totalCards = activeGenderVoices.length;
           sectionCount = 1;
           totalCardGaps = activeGenderVoices.length <= 1

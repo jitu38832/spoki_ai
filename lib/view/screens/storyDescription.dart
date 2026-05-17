@@ -8,6 +8,7 @@ import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spokiai/model/generatestory.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
+import 'package:spokiai/view/screens/editprofile.dart';
 import 'package:spokiai/view/screens/socket.dart';
 import 'package:spokiai/view/screens/story_quiz_screen.dart';
 import 'package:spokiai/view/screens/voice_settings.dart';
@@ -55,6 +56,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   static const String _pdfDownloadChannelName = 'Story PDF Downloads';
   static const String _pdfDownloadChannelDescription =
       'Notifications for downloaded story PDFs';
+  static const String _kStoryGuideSeen = 'story_word_guide_seen_v1';
+  static const String _kProfileSpokenLanguage = 'profile_spoken_language';
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
@@ -77,7 +80,65 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     unawaited(_initLocalNotifications());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startStoryQuizStatusFlow();
+      unawaited(_maybeShowStoryGuide());
     });
+  }
+
+  String _currentMeaningLanguage() {
+    final raw =
+        (PreferenceManager.getStringValue(key: _kProfileSpokenLanguage) ?? '')
+            .trim();
+    if (raw.isEmpty) return 'English';
+    return raw[0].toUpperCase() + raw.substring(1).toLowerCase();
+  }
+
+  Future<void> _maybeShowStoryGuide() async {
+    final bool seen = PreferenceManager.getBooleanValue(key: _kStoryGuideSeen) ?? false;
+    if (seen || !mounted) return;
+
+    final bool? understood = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Story Meaning Guide'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('1. Long press any word in the story to see its meaning.'),
+              const SizedBox(height: 8),
+              Text(
+                "2. Meanings are shown in your selected language (${_currentMeaningLanguage()}).",
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '3. To change language, open Profile and update "Which language do you speak?".',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  this.context,
+                  MaterialPageRoute(builder: (_) => const Editprofile()),
+                );
+              },
+              child: const Text('Change language'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Got it'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (understood == true) {
+      PreferenceManager.insertValue(key: _kStoryGuideSeen, value: true);
+    }
   }
 
   @override
@@ -524,24 +585,6 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                 ),
                 child: Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        "YOUR STORY",
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 1.4,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
                     textInter(
                       text: widget.generateStoryResponse.data?.metadata?.title
                               .toString() ??

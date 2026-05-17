@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 
@@ -285,5 +286,59 @@ class AppRepository {
     }
   }
 
+  /// Multipart feedback: [type] `bug` | `suggestion`, optional [screenshotPath].
+  Future<ResponseData> submitFeedback({
+    required String token,
+    required String type,
+    required String title,
+    required String description,
+    String? screenshotPath,
+  }) async {
+    try {
+      final fields = <String, dynamic>{
+        'type': type,
+        'title': title,
+        'description': description,
+      };
+      if (screenshotPath != null && screenshotPath.isNotEmpty) {
+        final file = File(screenshotPath);
+        if (await file.exists()) {
+          final name = screenshotPath.replaceAll(r'\', '/').split('/').last;
+          fields['screenshot'] = await MultipartFile.fromFile(
+            screenshotPath,
+            filename: name.isEmpty ? 'upload.jpg' : name,
+          );
+        }
+      }
+      final formData = FormData.fromMap(fields);
+      final response = await ApiService(token: token).sendRequest.post(
+            'users/feedback',
+            data: formData,
+          );
+
+      final raw = response.data;
+      Map<String, dynamic> body = {};
+      if (raw is Map<String, dynamic>) {
+        body = raw;
+      } else if (raw is Map) {
+        body = Map<String, dynamic>.from(raw);
+      }
+      return ResponseData(
+        statusCode: response.statusCode,
+        response: CommonResponse.fromJson(body),
+      );
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      String msg = 'Could not submit feedback';
+      if (data is Map) {
+        msg = data['message']?.toString() ??
+            data['error']?.toString() ??
+            msg;
+      }
+      throw ErrorData(message: msg, code: e.response?.statusCode);
+    } on Exception catch (_) {
+      rethrow;
+    }
+  }
 
 }
