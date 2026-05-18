@@ -19,9 +19,9 @@ final RegExp emailRegex = RegExp(
 
 // Live
 // ignore: constant_identifier_names
-// const BASEURL = 'http://3.109.110.211/api/v1/';
+const BASEURL = 'http://3.109.110.211/api/v1/';
 // const BASEURL = 'https://perusable-meaningful-bella.ngrok-free.dev/api/v1/';
 
 // Development (local) — same /api/v1/ suffix as production; drop it if your server mounts routes at root
-const BASEURL = 'http://192.168.1.4:9799/api/v1/'; 
+// const BASEURL = 'http://192.168.1.6:9799/api/v1/'; 
 

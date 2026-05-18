@@ -414,7 +414,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             illustration: _SpeakingCoachIllustration(isDark: isDark),
             buttonLabel: "Start Speaking",
-            buttonColor: const Color(0xFF12806E),
+            buttonColor: appColor,
             onTap: () {
               Navigator.pushReplacement(
                 context,
