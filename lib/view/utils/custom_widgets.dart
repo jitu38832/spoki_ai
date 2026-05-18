@@ -379,12 +379,16 @@ showToast({
   required BuildContext context,
   required String message,
   Color? buttonColor,
+  int maxLines = 5,
+  Duration toastDuration = const Duration(seconds: 5),
 }) {
   final bg = buttonColor ?? errorColor;
   FToast().init(context).showToast(
         child: Container(
+          width: MediaQuery.of(context).size.width * 0.92,
+          constraints: const BoxConstraints(minHeight: 72),
           padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(14),
@@ -397,7 +401,8 @@ showToast({
             ],
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.max,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
                 bg == successColor
@@ -414,15 +419,16 @@ showToast({
                     color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
-                  maxLines: 2,
+                  maxLines: maxLines,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
         ),
-        toastDuration: const Duration(seconds: 3),
+        toastDuration: toastDuration,
         gravity: ToastGravity.BOTTOM,
       );
 }

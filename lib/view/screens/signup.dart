@@ -13,6 +13,7 @@ import '../utils/custom_widgets.dart';
 import '../utils/preference_manager.dart';
 import 'dashboard.dart';
 import 'editprofile.dart';
+import 'login.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -30,6 +31,25 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final RegExp emailRegex = RegExp(
     r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
   );
+
+  bool _isUserNotFoundError(AppStates state) {
+    final code = state.errorData?.code;
+    final raw = (state.errorData?.message ?? state.error ?? '').toLowerCase();
+    return code == 404 ||
+        raw.contains('user not found') ||
+        raw.contains('no user found');
+  }
+
+  void _forceLogoutToLogin() {
+    PreferenceManager.clearPreferences();
+    if (!mounted) return;
+    showToast(context: context, message: "Session expired. Please login again.");
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +190,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         if (_routeAfterSignupProfile &&
                             state.status == AppStatus.getProfileError) {
                           setState(() => _routeAfterSignupProfile = false);
+                          if (_isUserNotFoundError(state)) {
+                            _forceLogoutToLogin();
+                            return;
+                          }
                           if (!context.mounted) return;
                           Navigator.pushAndRemoveUntil(
                             context,

@@ -1,8 +1,12 @@
+import 'dart:developer' as developer;
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/model/getprofile.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
+import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
 import 'package:spokiai/view/utils/language_options.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
@@ -52,9 +56,53 @@ class _EditprofileState extends State<Editprofile> {
   String? _selectedEnglishLevel;
   String? _selectedLanguage;
   String _selectedAvatarPath = _avatarOptionPaths.first;
+  bool _isSavingProfile = false;
+
+  bool _isUserNotFoundError(AppStates state) {
+    final code = state.errorData?.code;
+    final raw = (state.errorData?.message ?? state.error ?? '').toLowerCase();
+    return code == 404 ||
+        raw.contains('user not found') ||
+        raw.contains('no user found');
+  }
+
+  Future<void> _forceLogoutToLogin() async {
+    PreferenceManager.clearPreferences();
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    showToast(context: context, message: "Session expired. Please login again.");
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
 
   List<int> get _ageYears =>
       List<int>.generate(83, (i) => i + 13); // 13–95
+
+  String? _displayGender(String? gender) {
+    final g = gender?.trim().toLowerCase();
+    if (g == 'male') return 'Male';
+    if (g == 'female') return 'Female';
+    return null;
+  }
+
+  String? _displayEnglishLevel(String? level) {
+    final v = level?.trim().toLowerCase();
+    if (v == 'beginner') return 'Beginner';
+    if (v == 'intermediate') return 'Intermediate';
+    if (v == 'fluent') return 'Fluent';
+    return null;
+  }
+
+  String? get _normalizedEnglishLevel {
+    final v = _selectedEnglishLevel?.trim().toLowerCase();
+    if (v == 'beginner') return 'beginner';
+    if (v == 'intermediate') return 'intermediate';
+    if (v == 'fluent') return 'fluent';
+    return null;
+  }
 
   String? get _normalizedGender {
     final g = _selectedGender?.trim().toLowerCase();
@@ -88,27 +136,11 @@ class _EditprofileState extends State<Editprofile> {
   void initState() {
     super.initState();
     token = PreferenceManager.getStringValue(key: "token") ?? "";
-    _loadProfileExtrasFromPrefs();
+    _loadAvatarFromPrefs();
     BlocProvider.of<AppCubit>(context).getProfile(token);
   }
 
-  void _loadProfileExtrasFromPrefs() {
-    _selectedGender = PreferenceManager.getStringValue(key: _kGender);
-    if (_selectedGender != null && _selectedGender!.isEmpty) {
-      _selectedGender = null;
-    }
-    final ageStr = PreferenceManager.getStringValue(key: _kAge);
-    _selectedAge = int.tryParse(ageStr ?? '');
-    _selectedEnglishLevel =
-        PreferenceManager.getStringValue(key: _kEnglish);
-    if (_selectedEnglishLevel != null &&
-        _selectedEnglishLevel!.isEmpty) {
-      _selectedEnglishLevel = null;
-    }
-    _selectedLanguage = PreferenceManager.getStringValue(key: _kLanguage);
-    if (_selectedLanguage != null && _selectedLanguage!.isEmpty) {
-      _selectedLanguage = null;
-    }
+  void _loadAvatarFromPrefs() {
     final avatar = PreferenceManager.getStringValue(key: _kAvatar);
     if (avatar != null &&
         avatar.isNotEmpty &&
@@ -119,19 +151,12 @@ class _EditprofileState extends State<Editprofile> {
   }
 
   void _applyProfileDataFromApi(Data? d) {
-    if (d == null) return;
-    if (d.gender != null && d.gender!.isNotEmpty) {
-      _selectedGender = d.gender;
-    }
-    if (d.age != null && _ageYears.contains(d.age)) {
-      _selectedAge = d.age;
-    }
-    if (d.englishLevel != null && d.englishLevel!.isNotEmpty) {
-      _selectedEnglishLevel = d.englishLevel;
-    }
-    if (d.spokenLanguage != null && d.spokenLanguage!.isNotEmpty) {
-      _selectedLanguage = d.spokenLanguage;
-    }
+    _selectedGender = _displayGender(d?.gender);
+    final apiAge = d?.age;
+    _selectedAge = (apiAge != null && _ageYears.contains(apiAge)) ? apiAge : null;
+    _selectedEnglishLevel = _displayEnglishLevel(d?.englishLevel);
+    final language = d?.spokenLanguage?.trim();
+    _selectedLanguage = (language == null || language.isEmpty) ? null : language;
     _syncAvatarToSelectedGender();
   }
 
@@ -186,19 +211,40 @@ class _EditprofileState extends State<Editprofile> {
     if (widget.isPostLoginSetup) {
       if (!_validateExtrasForPostLogin()) return;
     }
-    _persistProfileExtras();
-    if (!context.mounted) return;
-    if (widget.isPostLoginSetup) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const DashboardScreen(),
-        ),
-        (route) => false,
-      );
-    } else {
-      Navigator.pop(context);
+    if (token.trim().isEmpty) {
+      showToast(context: context, message: "Session expired. Please login again.");
+      return;
     }
+
+    final normalizedGender = _selectedGender?.trim().toLowerCase();
+    final trimmedName = nameController.text.trim();
+    final normalizedEnglish = _normalizedEnglishLevel;
+    final trimmedLanguage = _selectedLanguage?.trim();
+
+    final Map<String, dynamic> profileDetails = {
+      "name": trimmedName,
+      "gender": normalizedGender,
+      "age": _selectedAge,
+      "englishLevel": normalizedEnglish,
+      "spokenLanguage": trimmedLanguage,
+    }..removeWhere((key, value) =>
+        value == null || (value is String && value.trim().isEmpty));
+
+    if (profileDetails.isEmpty) {
+      showToast(context: context, message: "No profile details to update.");
+      return;
+    }
+
+    setState(() => _isSavingProfile = true);
+    developer.log(
+      "Calling update profile API",
+      name: "Editprofile",
+      error: profileDetails,
+    );
+    context.read<AppCubit>().updateProfile(
+          token: token,
+          profileDetails: profileDetails,
+        );
   }
 
   String _languageDisplay(String language) {
@@ -649,7 +695,7 @@ class _EditprofileState extends State<Editprofile> {
       child: Scaffold(
         backgroundColor: surfaceBg,
         body: BlocConsumer<AppCubit, AppStates>(
-          listener: (context, state) {
+          listener: (context, state) async {
             if (state.status == AppStatus.getProfileSuccess) {
               getProfileResponse =
                   state.responseData?.response as GetProfileResponse;
@@ -662,9 +708,57 @@ class _EditprofileState extends State<Editprofile> {
             }
 
             if (state.status == AppStatus.getProfileError) {
+              if (_isUserNotFoundError(state)) {
+                await _forceLogoutToLogin();
+                return;
+              }
               showToast(
                   context: context,
                   message: state.errorData?.message.toString() ?? "");
+            }
+
+            if (_isSavingProfile &&
+                state.status == AppStatus.updateProfileSuccess) {
+              developer.log(
+                "updateMe success",
+                name: "Editprofile",
+              );
+              _persistProfileExtras();
+              if (!context.mounted) return;
+              showToast(
+                context: context,
+                message: "Profile updated successfully",
+                buttonColor: successColor,
+              );
+              setState(() => _isSavingProfile = false);
+              if (widget.isPostLoginSetup) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DashboardScreen(),
+                  ),
+                  (route) => false,
+                );
+              } else {
+                Navigator.pop(context);
+              }
+              return;
+            }
+
+            if (_isSavingProfile &&
+                state.status == AppStatus.updateProfileError) {
+              final message = state.errorData?.message.toString().trim().isNotEmpty ==
+                      true
+                  ? state.errorData!.message
+                  : "Could not update profile. Please try again.";
+              developer.log(
+                "updateMe failed",
+                name: "Editprofile",
+                error: message,
+              );
+              if (!context.mounted) return;
+              showToast(context: context, message: message);
+              setState(() => _isSavingProfile = false);
             }
           },
           builder: (context, state) {
@@ -1009,7 +1103,9 @@ class _EditprofileState extends State<Editprofile> {
                                     title: "Save Changes",
                                     fontSize: 16 / 1.2,
                                     fontWeight: FontWeight.w700,
-                                    isLoading: false,
+                                    isLoading: _isSavingProfile &&
+                                        state.status ==
+                                            AppStatus.updateProfileLoading,
                                     icon: Icons.save_rounded,
                                     height: 48,
                                     onPressed: _saveProfile,

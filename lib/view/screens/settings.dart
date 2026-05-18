@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/view/screens/contact_support_screen.dart';
 import 'package:spokiai/view/screens/feedback_screen.dart';
+import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/screens/privacypolicy.dart';
-import 'package:spokiai/view/screens/signup.dart';
 import 'package:spokiai/view/screens/termscondition.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
@@ -428,7 +428,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const SignUpScreen(),
+                    builder: (context) => const LoginScreen(),
                   ),
                   (route) => false,
                 );

@@ -9,6 +9,11 @@ enum AppStatus {
   loginSuccess,
   loginError,
 
+  appleLoginLoading,
+  appleLoginSuccess,
+  appleLoginError,
+
+
   checkStatusLoading,
   checkStatusSuccess,
   checkStatusError,
@@ -80,6 +85,10 @@ enum AppStatus {
   submitFeedbackLoading,
   submitFeedbackSuccess,
   submitFeedbackError,
+
+  updateProfileLoading,
+  updateProfileSuccess,
+  updateProfileError,
 
 }
 

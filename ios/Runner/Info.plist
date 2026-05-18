@@ -26,12 +26,51 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app requires access to the camera so you can take a profile photo.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to your microphone to record audio for speech-to-text conversion.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app requires access to your photo library so you can select a profile photo.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>This app needs access to speech recognition to convert your voice to text.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Spoki AI needs photo library access so you can attach an optional screenshot with your feedback.</string>
+
+	<key>CFBundleURLTypes</key>
+    	<array>
+    		<dict>
+    			<key>CFBundleURLSchemes</key>
+    			<array>
+    				<string>fb1910127483071032</string>
+    				<string>com.googleusercontent.apps.303958409160-4fefip198pj40lmmgq6m8dvcqu2a22c9</string>
+    			</array>
+    		</dict>
+    	</array>
+	<key>GIDClientID</key>
+    	<string>303958409160-4fefip198pj40lmmgq6m8dvcqu2a22c9.apps.googleusercontent.com</string>
+
+    	<key>FirebaseAppDelegateProxyEnabled</key>
+    	<false/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>FlutterSceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

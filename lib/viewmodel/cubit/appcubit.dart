@@ -23,6 +23,22 @@ class AppCubit extends Cubit<AppStates> {
     }
   }
 
+  Future<void> appleLogin(Map<String, dynamic> appleDetails) async {
+    emit(state.copyWith(status: AppStatus.appleLoginLoading));
+    try {
+      ResponseData response = await repository.appleLogin(appleDetails);
+      emit(state.copyWith(
+          status: AppStatus.appleLoginSuccess, responseData: response));
+    } on ErrorData catch (errorData) {
+      emit(state.copyWith(
+          status: AppStatus.appleLoginError, errorData: errorData, error: null));
+    } catch (e) {
+      emit(state.copyWith(
+          status: AppStatus.appleLoginError, error: e.toString(), errorData: null));
+    }
+  }
+
+
   Future<void> checkStatus() async {
     emit(state.copyWith(status: AppStatus.checkStatusLoading));
     try {
@@ -302,6 +318,32 @@ class AppCubit extends Cubit<AppStates> {
     } catch (e) {
       emit(state.copyWith(
         status: AppStatus.submitFeedbackError,
+        error: e.toString(),
+        errorData: null,
+      ));
+    }
+  }
+
+  Future<void> updateProfile({
+    required String token,
+    required Map<String, dynamic> profileDetails,
+  }) async {
+    emit(state.copyWith(status: AppStatus.updateProfileLoading));
+    try {
+      final response = await repository.updateProfile(token, profileDetails);
+      emit(state.copyWith(
+        status: AppStatus.updateProfileSuccess,
+        responseData: response,
+      ));
+    } on ErrorData catch (errorData) {
+      emit(state.copyWith(
+        status: AppStatus.updateProfileError,
+        errorData: errorData,
+        error: null,
+      ));
+    } catch (e) {
+      emit(state.copyWith(
+        status: AppStatus.updateProfileError,
         error: e.toString(),
         errorData: null,
       ));

@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "303958409160-tev6kc0l45q2uu2v8nhuh7jb4on04o85.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.spokiai",
+            "certificate_hash": "2e3192a9ac79640a17161343f455d120e5d3eaa0"
+          }
+        },
+        {
           "client_id": "303958409160-dkuk2e7fq58bvsdij0l79v7do6j0krfo.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -37,6 +45,13 @@
             {
               "client_id": "303958409160-dkuk2e7fq58bvsdij0l79v7do6j0krfo.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "303958409160-4fefip198pj40lmmgq6m8dvcqu2a22c9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.spokiai"
+              }
             }
           ]
         }

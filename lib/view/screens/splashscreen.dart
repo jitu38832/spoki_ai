@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/model/getprofile.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
-import 'package:spokiai/view/screens/signup.dart';
+import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_navigator.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
@@ -40,6 +41,25 @@ class _SplashscreenState extends State<Splashscreen>
         screen: const DashboardScreen(),
       );
     }
+  }
+
+  bool _isUserNotFoundError(AppStates state) {
+    final code = state.errorData?.code;
+    final raw = (state.errorData?.message ?? state.error ?? '').toLowerCase();
+    return code == 404 ||
+        raw.contains('user not found') ||
+        raw.contains('no user found');
+  }
+
+  Future<void> _forceLogoutToLogin(BuildContext context) async {
+    PreferenceManager.clearPreferences();
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    _navigated = true;
+    CustomNavigator.pushAndRemoveUntil(
+      context: context,
+      screen: const LoginScreen(),
+    );
   }
 
   @override
@@ -79,9 +99,11 @@ class _SplashscreenState extends State<Splashscreen>
               _navigated = true;
               CustomNavigator.pushAndRemoveUntil(
                 context: context,
-                screen: const SignUpScreen(),
+                // screen: const SignUpScreen(),
+                screen: const LoginScreen(),
               );
-            } else {
+            }
+            else {
               _awaitingProfileForRoute = true;
               context.read<AppCubit>().getProfile(token);
             }
@@ -102,6 +124,10 @@ class _SplashscreenState extends State<Splashscreen>
           if (_awaitingProfileForRoute &&
               state.status == AppStatus.getProfileError) {
             _awaitingProfileForRoute = false;
+            if (_isUserNotFoundError(state)) {
+              await _forceLogoutToLogin(context);
+              return;
+            }
             _navigated = true;
             if (!mounted) return;
             CustomNavigator.pushAndRemoveUntil(
@@ -123,7 +149,7 @@ class _SplashscreenState extends State<Splashscreen>
               _navigated = true;
               CustomNavigator.pushAndRemoveUntil(
                 context: context,
-                screen: const SignUpScreen(),
+                screen: const LoginScreen(),
               );
             }
           }

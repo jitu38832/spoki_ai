@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:share_plus/share_plus.dart';
@@ -60,6 +61,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   static const String _kProfileSpokenLanguage = 'profile_spoken_language';
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+  late FlutterTts flutterTts;
 
   final SocketService _storyQuizSocket = SocketService();
   Timer? _storyQuizPollTimer;
@@ -71,13 +73,21 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   String? _storyQuizHint;
   Map<String, dynamic>? _preloadedQuizFromSocket;
 
+  double volume = 1.0;
+  double pitch = 1.0;
+  double rate = 0.5;
   bool _isStoryTtsPreparing = false;
+  bool _isSofyStorySpeaking = false;
+  bool _cancelSofyStoryPlayback = false;
   InworldTtsCubit? _inworldTts;
+  Map<String, String> availableLanguages = {};
+  String? selectedLanguageCode;
 
   @override
   void initState() {
+    initTts();
+    // unawaited(_initLocalNotifications());
     super.initState();
-    unawaited(_initLocalNotifications());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startStoryQuizStatusFlow();
       unawaited(_maybeShowStoryGuide());
@@ -359,7 +369,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                 final inworldStoryActive = tts.playbackId == 'story' &&
                     (tts.status == InworldTtsStatus.loading ||
                         tts.status == InworldTtsStatus.playing);
-                final storyTtsActive = inworldStoryActive;
+                final storyTtsActive =
+                    _isSofyStorySpeaking || inworldStoryActive;
                 return IconButton(
                   icon: _isStoryTtsPreparing
                       ? const SizedBox(
@@ -385,11 +396,15 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
                       ),
                     );
                     if (!mounted || result is! Map) return;
+                    final useSofy = result['useSofy'] == true;
                     final shouldPlay = result['playStoryTts'] == true;
                     final selectedVoiceId =
                         result['selectedVoiceId']?.toString();
                     if (shouldPlay) {
-                      await speak(selectedVoiceId: selectedVoiceId);
+                      await speak(
+                        useSofy: useSofy,
+                        selectedVoiceId: selectedVoiceId,
+                      );
                     }
                   },
                 );
@@ -430,7 +445,134 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     );
   }
 
-  Future<void> speak({String? selectedVoiceId}) async {
+  Future<void> initTts() async {
+    flutterTts = FlutterTts();
+
+    // Android: use Google TTS engine for best quality
+    if (Platform.isAndroid) {
+      await flutterTts.setEngine("com.google.android.tts");
+    }
+
+    // Set initial values
+    await flutterTts.setVolume(volume);
+    await flutterTts.setSpeechRate(rate);
+    await flutterTts.setPitch(pitch);
+    await flutterTts.awaitSpeakCompletion(true);
+
+    _attachFlutterTtsHandlers();
+
+    // Load languages safely without duplicates
+    await loadLanguages();
+
+    setState(() {});
+  }
+
+  void _attachFlutterTtsHandlers() {
+    flutterTts.setStartHandler(() {
+      if (!mounted) return;
+      setState(() {
+        _isStoryTtsPreparing = false;
+        _isSofyStorySpeaking = true;
+      });
+    });
+    flutterTts.setCompletionHandler(() {
+      if (!mounted) return;
+      setState(() => _isSofyStorySpeaking = false);
+    });
+    flutterTts.setCancelHandler(() {
+      if (!mounted) return;
+      setState(() => _isSofyStorySpeaking = false);
+    });
+    flutterTts.setErrorHandler((msg) {
+      if (mounted) {
+        setState(() {
+          _isSofyStorySpeaking = false;
+          _isStoryTtsPreparing = false;
+        });
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $msg")));
+    });
+  }
+
+  Future<void> _resetFlutterTtsEngineForSofy() async {
+    try {
+      await flutterTts.stop();
+    } catch (_) {}
+    flutterTts = FlutterTts();
+    if (Platform.isAndroid) {
+      await flutterTts.setEngine("com.google.android.tts");
+    }
+    await flutterTts.awaitSpeakCompletion(true);
+    _attachFlutterTtsHandlers();
+  }
+
+  Future<void> loadLanguages() async {
+    try {
+      dynamic langs = await flutterTts.getLanguages;
+
+      if (langs == null || langs.isEmpty) {
+        // Fallback if getLanguages fails
+        availableLanguages = {
+          "en-US": "English (US)",
+          "en-GB": "English (UK)",
+          // "es-ES": "Spanish",
+          // "fr-FR": "French",
+          // "de-DE": "German",
+          // "hi-IN": "Hindi",
+        };
+      } else {
+        // Clean and deduplicate
+        availableLanguages.clear();
+        for (var lang in langs) {
+          String code = lang.toString().trim();
+
+          // Convert common variations to standard format
+          String displayName = code;
+          if (code.contains("-")) {
+            displayName = "";
+          }
+
+          // Standard display names
+          Map<String, String> nameMap = {
+            "en-US": "English (US)",
+            "en-GB": "English (UK)",
+            "en-AU": "English (Australia)",
+            "es-ES": "Spanish (Spain)",
+            "es-MX": "Spanish (Mexico)",
+            "fr-FR": "French",
+            "de-DE": "German",
+            "it-IT": "Italian",
+            "pt-BR": "Portuguese (Brazil)",
+            "hi-IN": "Hindi",
+            "zh-CN": "Chinese (Simplified)",
+            "ja-JP": "Japanese",
+            "ko-KR": "Korean",
+          };
+
+          displayName = nameMap[code] ?? displayName;
+
+          availableLanguages[code] = displayName;
+        }
+      }
+
+      selectedLanguageCode ??= availableLanguages.keys.firstWhere(
+        (k) => k.startsWith("en"),
+        orElse: () => availableLanguages.keys.first,
+      );
+
+      await flutterTts.setLanguage(selectedLanguageCode!);
+      setState(() {});
+    } catch (e) {
+      debugPrint("Error loading languages: $e");
+    }
+  }
+
+  Future<void> speak({
+    bool useSofy = false,
+    String? selectedVoiceId,
+  }) async {
     final story = widget.generateStoryResponse.data?.story.toString() ?? '';
     if (story.isEmpty || !mounted) return;
     final cubit = context.read<InworldTtsCubit>();
@@ -442,6 +584,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     }
     setState(() {
       _isStoryTtsPreparing = true;
+      _isSofyStorySpeaking = false;
+      _cancelSofyStoryPlayback = false;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -451,11 +595,17 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     );
     try {
       await stop(keepPreparing: true);
-      await cubit.speak(
-        story,
-        playbackId: 'story',
-        voiceIdForPreview: selectedVoiceId,
-      );
+      if (useSofy) {
+        // Give the local TTS engine a brief moment after stop() to reset.
+        await Future.delayed(const Duration(milliseconds: 120));
+        await _speakStoryWithFlutterTts(story);
+      } else {
+        await cubit.speak(
+          story,
+          playbackId: 'story',
+          voiceIdForPreview: selectedVoiceId,
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isStoryTtsPreparing = false);
@@ -464,12 +614,15 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   }
 
   Future<void> stop({bool keepPreparing = false}) async {
+    _cancelSofyStoryPlayback = true;
+    await flutterTts.stop();
     final cubit = _inworldTts;
     if (cubit != null) {
       await cubit.stop();
     }
     if (mounted) {
       setState(() {
+        _isSofyStorySpeaking = false;
         if (!keepPreparing) {
           _isStoryTtsPreparing = false;
         }
@@ -489,26 +642,114 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     );
   }
 
-  Future<void> _initLocalNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/app_icon');
-    const settings = InitializationSettings(android: androidSettings);
-    await _localNotifications.initialize(
-      settings: settings,
-      onDidReceiveNotificationResponse: _onNotificationTap,
-    );
-
-    final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestNotificationsPermission();
-    await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        _pdfDownloadChannelId,
-        _pdfDownloadChannelName,
-        description: _pdfDownloadChannelDescription,
-        importance: Importance.high,
-      ),
-    );
+  Future<int> _resolveFlutterTtsMaxInputLength() async {
+    try {
+      final dynamic maxLen = await flutterTts.getMaxSpeechInputLength;
+      if (maxLen is int && maxLen > 0) return maxLen;
+      if (maxLen is String) {
+        final parsed = int.tryParse(maxLen);
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    } catch (_) {
+      // Fallback used below.
+    }
+    return 2500;
   }
+
+  List<String> _splitStoryForFlutterTts(String text, int chunkLimit) {
+    final cleaned = text.replaceAll('\n', ' ').trim();
+    if (cleaned.isEmpty) return const [];
+    final words = cleaned
+        .split(RegExp(r'\s+'))
+        .where((w) => w.trim().isNotEmpty)
+        .toList();
+    final chunks = <String>[];
+    var current = StringBuffer();
+    for (final word in words) {
+      final w = word.trim();
+      final nextLen =
+          current.isEmpty ? w.length : current.length + 1 + w.length;
+      if (nextLen > chunkLimit && current.isNotEmpty) {
+        chunks.add(current.toString());
+        current = StringBuffer(w);
+      } else {
+        if (current.isNotEmpty) current.write(' ');
+        current.write(w);
+      }
+    }
+    if (current.isNotEmpty) chunks.add(current.toString());
+    return chunks.isEmpty ? [cleaned] : chunks;
+  }
+
+  Future<void> _speakStoryWithFlutterTts(String story) async {
+    _cancelSofyStoryPlayback = false;
+    try {
+      await _resetFlutterTtsEngineForSofy();
+      await flutterTts.setLanguage(selectedLanguageCode ?? 'en-US');
+      await flutterTts.setVolume(volume);
+      await flutterTts.setSpeechRate(rate);
+      await flutterTts.setPitch(pitch);
+      if (Platform.isAndroid) {
+        try {
+          // Start a fresh utterance queue each time.
+          await flutterTts.setQueueMode(0);
+        } catch (_) {}
+      }
+
+      final cleanStory = story.replaceAll('\n', ' ').trim();
+      final maxInput = await _resolveFlutterTtsMaxInputLength();
+      if (mounted) {
+        setState(() {
+          _isStoryTtsPreparing = false;
+          _isSofyStorySpeaking = true;
+        });
+      }
+
+      // Prefer single utterance to avoid any chunk boundary skipping.
+      if (cleanStory.length <= maxInput) {
+        if (!_cancelSofyStoryPlayback) {
+          await flutterTts.speak(cleanStory);
+        }
+      } else {
+        final safeChunkLimit = maxInput > 120 ? maxInput - 20 : maxInput;
+        final chunks = _splitStoryForFlutterTts(cleanStory, safeChunkLimit);
+        for (final chunk in chunks) {
+          if (_cancelSofyStoryPlayback || !mounted) break;
+          await flutterTts.speak(chunk);
+          if (_cancelSofyStoryPlayback || !mounted) break;
+          await Future.delayed(const Duration(milliseconds: 20));
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSofyStorySpeaking = false;
+          _isStoryTtsPreparing = false;
+        });
+      }
+    }
+  }
+
+  // Future<void> _initLocalNotifications() async {
+  //   const androidSettings = AndroidInitializationSettings('@mipmap/app_icon');
+  //   const settings = InitializationSettings(android: androidSettings);
+  //   await _localNotifications.initialize(
+  //     settings: settings,
+  //     onDidReceiveNotificationResponse: _onNotificationTap,
+  //   );
+  //
+  //   final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
+  //       AndroidFlutterLocalNotificationsPlugin>();
+  //   await androidPlugin?.requestNotificationsPermission();
+  //   await androidPlugin?.createNotificationChannel(
+  //     const AndroidNotificationChannel(
+  //       _pdfDownloadChannelId,
+  //       _pdfDownloadChannelName,
+  //       description: _pdfDownloadChannelDescription,
+  //       importance: Importance.high,
+  //     ),
+  //   );
+  // }
 
   Future<void> _onNotificationTap(NotificationResponse response) async {
     final payload = response.payload?.trim();
@@ -527,13 +768,13 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       visibility: NotificationVisibility.public,
     );
     const details = NotificationDetails(android: androidDetails);
-    await _localNotifications.show(
-      id: file.path.hashCode,
-      title: 'Story PDF downloaded',
-      body: 'Tap to open ${file.uri.pathSegments.last}',
-      notificationDetails: details,
-      payload: file.path,
-    );
+    // await _localNotifications.show(
+    //   id: file.path.hashCode,
+    //   title: 'Story PDF downloaded',
+    //    body: 'Tap to open ${file.uri.pathSegments.last}',
+    //   notificationDetails: details,
+    //   payload: file.path,
+    // );
   }
 
   @override
@@ -547,6 +788,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       _storyQuizSocket.socket.off('connect', _storyQuizConnectHandler!);
       _storyQuizConnectHandler = null;
     }
+    flutterTts.stop();
     unawaited(_inworldTts?.stop() ?? Future.value());
     super.dispose();
   }
