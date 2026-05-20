@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:spokiai/payment/SubscriptionScreen.dart';
 import 'package:spokiai/view/screens/splashscreen.dart';
 import 'package:spokiai/view/utils/app_theme.dart';
 import 'package:spokiai/view/utils/firebase_options.dart';
@@ -80,7 +81,8 @@ class InitApp extends StatelessWidget {
                 darkTheme: AppTheme.dark,
                 themeMode: mode,
                 title: 'Spoki AI',
-                home: const Splashscreen(),
+                // home: const Splashscreen(),
+                home: const SubscriptionScreen(),
               );
             },
           ),
