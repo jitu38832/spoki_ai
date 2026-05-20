@@ -9,6 +9,7 @@ class SubscriptionService {
   StreamSubscription<List<PurchaseDetails>>? _subscription;
 
   final List<String> productIds = [
+    'test_plan',
     'montlhy_subs',
     'yearly_subs',
   ];
