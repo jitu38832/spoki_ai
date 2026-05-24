@@ -12,6 +12,10 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:spokiai/model/getprofile.dart' as profile_model;
 import 'package:spokiai/model/googlelogin.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
+import 'package:spokiai/payment/story_freemium.dart';
+import 'package:spokiai/payment/post_login_entitlements_sync.dart';
+import 'package:spokiai/payment/SubscriptionService.dart';
 
 import '../../viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
@@ -41,6 +45,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _forceLogoutToLogin(BuildContext context) async {
+    ChatFreemium.resetVolatileState();
+    StoryFreemium.resetVolatileState();
+    SubscriptionService.instance.clearSessionBillingState();
     PreferenceManager.clearPreferences();
     await FirebaseAuth.instance.signOut();
     if (!context.mounted) return;
@@ -208,6 +215,11 @@ class _LoginScreenState extends State<LoginScreen> {
           setState(() => _routeAfterGoogleProfile = false);
           final response =
               state.responseData?.response as profile_model.GetProfileResponse;
+          PreferenceManager.cacheProfileDisplayName(response.data?.name);
+          PreferenceManager.cacheProfileEmail(response.data?.email);
+          await syncBillingAndChatQuotasAfterLogin(
+            context.read<AppCubit>().repository,
+          );
           if (!context.mounted) return;
           final incomplete = _needsProfileCompletion(response.data);
           Navigator.pushAndRemoveUntil(

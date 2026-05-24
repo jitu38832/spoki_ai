@@ -350,28 +350,45 @@ class _ResultHeroCard extends StatelessWidget {
                   border: Border.all(color: const Color(0xFFFFE5C9), width: 4),
                 ),
                 alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${vm.correctAnswers}',
-                      style: GoogleFonts.inter(
-                        fontSize: topFs(52),
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFFF39A1E),
-                        height: 0.9,
-                      ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.center,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: fs(10)),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${vm.correctAnswers}',
+                          style: GoogleFonts.inter(
+                            fontSize: topFs(42),
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFFF39A1E),
+                            height: 0.88,
+                          ),
+                        ),
+                        SizedBox(height: fs(2)),
+                        Text(
+                          '/ ${vm.totalQuestions}',
+                          style: GoogleFonts.inter(
+                            fontSize: topFs(20),
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF3E3B6C),
+                          ),
+                        ),
+                        SizedBox(height: fs(3)),
+                        Text(
+                          '${vm.percent}%',
+                          style: GoogleFonts.inter(
+                            fontSize: topFs(22),
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF5C5790),
+                            height: 1.05,
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: fs(4)),
-                    Text(
-                      '/ ${vm.totalQuestions}',
-                      style: GoogleFonts.inter(
-                        fontSize: topFs(24),
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF3E3B6C),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
               SizedBox(width: fs(12)),
@@ -608,27 +625,27 @@ class _NextStepSection extends StatelessWidget {
           SizedBox(height: fs(10)),
           _ActionCard(
             bgColor: const Color(0xFF3E22B8),
-            icon: Icons.visibility_rounded,
-            title: 'Review & Learn',
-            subtitle: 'See correct answers and learn from your mistakes.',
-            titleColor: Colors.white,
-            subtitleColor: Colors.white.withValues(alpha: 0.88),
-            trailingBadge: vm.recommendReview ? 'Recommended' : null,
-            onTap: onReviewTap,
-          ),
-          SizedBox(height: fs(8)),
-          _ActionCard(
-            bgColor: Colors.white,
             icon: Icons.mic_rounded,
             title: vm.speakingCompleted ? 'Start next story' : 'Practice Speaking',
             subtitle: vm.speakingCompleted
                 ? 'Keep improving with a fresh story conversation.'
                 : 'Build confidence by turning this story into a real conversation.',
+            titleColor: Colors.white,
+            subtitleColor: Colors.white.withValues(alpha: 0.88),
+            durationChip: vm.speakingCompleted ? null : '2–3 min',
+            trailingBadge: vm.speakingCompleted ? null : 'Recommended',
+            onTap: onPracticeTap,
+          ),
+          SizedBox(height: fs(8)),
+          _ActionCard(
+            bgColor: Colors.white,
+            icon: Icons.visibility_rounded,
+            title: 'Review & Learn',
+            subtitle: 'See correct answers and learn from your mistakes.',
             titleColor: const Color(0xFF171539),
             subtitleColor: const Color(0xFF5C5A7C),
-            durationChip: vm.speakingCompleted ? null : '2–3 min',
             borderColor: const Color(0xFFEDEAF8),
-            onTap: onPracticeTap,
+            onTap: onReviewTap,
           ),
         ],
       ),
@@ -699,43 +716,75 @@ class _ActionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            title,
-                            style: GoogleFonts.inter(
-                              fontSize: fs(14),
-                              fontWeight: FontWeight.w800,
-                              color: titleColor,
-                            ),
-                          ),
-                        ),
-                        if (durationChip != null) ...[
-                          SizedBox(width: fs(8)),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: fs(8),
-                              vertical: fs(3),
-                            ),
-                            decoration: BoxDecoration(
-                              color: isDarkCard
-                                  ? Colors.white.withValues(alpha: 0.15)
-                                  : const Color(0xFFF1EDFF),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              durationChip!,
-                              style: GoogleFonts.inter(
-                                fontSize: fs(10.5),
-                                fontWeight: FontWeight.w700,
-                                color: isDarkCard ? Colors.white : appColor,
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: fs(14),
+                        fontWeight: FontWeight.w800,
+                        color: titleColor,
+                        height: 1.22,
+                      ),
+                    ),
+                    if (durationChip != null || trailingBadge != null) ...[
+                      SizedBox(height: fs(6)),
+                      Wrap(
+                        spacing: fs(8),
+                        runSpacing: fs(6),
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (durationChip != null)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: fs(8),
+                                vertical: fs(3),
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDarkCard
+                                    ? Colors.white.withValues(alpha: 0.15)
+                                    : const Color(0xFFF1EDFF),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                durationChip!,
+                                style: GoogleFonts.inter(
+                                  fontSize: fs(10.5),
+                                  fontWeight: FontWeight.w700,
+                                  color:
+                                      isDarkCard ? Colors.white : appColor,
+                                ),
                               ),
                             ),
-                          ),
+                          if (trailingBadge != null)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: fs(10),
+                                vertical: fs(4),
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDarkCard
+                                    ? Colors.white
+                                    : const Color(0xFFF1EDFF),
+                                borderRadius: BorderRadius.circular(999),
+                                border: isDarkCard
+                                    ? null
+                                    : Border.all(
+                                        color: appColor.withValues(alpha: 0.25),
+                                      ),
+                              ),
+                              child: Text(
+                                trailingBadge!,
+                                style: GoogleFonts.inter(
+                                  fontSize: fs(11),
+                                  fontWeight: FontWeight.w700,
+                                  color: appColor,
+                                ),
+                              ),
+                            ),
                         ],
-                      ],
-                    ),
+                      ),
+                    ],
                     SizedBox(height: fs(4)),
                     Text(
                       subtitle,
@@ -750,26 +799,6 @@ class _ActionCard extends StatelessWidget {
                 ),
               ),
               SizedBox(width: fs(8)),
-              if (trailingBadge != null)
-                Container(
-                  margin: EdgeInsets.only(right: fs(8)),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: fs(10),
-                    vertical: fs(5),
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    trailingBadge!,
-                    style: GoogleFonts.inter(
-                      fontSize: fs(11),
-                      fontWeight: FontWeight.w700,
-                      color: appColor,
-                    ),
-                  ),
-                ),
               Container(
                 width: fs(34),
                 height: fs(34),

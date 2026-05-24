@@ -7,7 +7,10 @@ import 'package:spokiai/view/screens/settings.dart';
 import 'package:spokiai/view/screens/storyhistory.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
+import 'package:spokiai/view/utils/app_drawer_streak.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/payment/SubscriptionScreen.dart';
+import 'package:spokiai/payment/SubscriptionService.dart';
 import 'home.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -19,16 +22,31 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const String _streakDaysKey = 'home_drawer_streak_days';
-  static const String _streakLastOpenKey = 'home_drawer_streak_last_open';
   static const String _androidAppLink =
       'https://play.google.com/store/apps/details?id=com.spokiai&pcampaignid=web_share';
   static const String _iosAppLink =
       'https://apps.apple.com/ng/app/spoki-ai/id6760191046';
 
   int _selectedIndex = 0;
-  int _streakDays = 1;
+  int _streakDays = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  bool get _drawerPremiumBadge =>
+      SubscriptionService.instance.isSubscribed;
+
+  void _refreshPremiumUiFromPrefs() {
+    SubscriptionService.instance.reloadBillingFlagFromPrefs();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openSubscriptionScreen() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (context) => const SubscriptionScreen(),
+      ),
+    );
+    _refreshPremiumUiFromPrefs();
+  }
 
   List<Widget> get _screens => [
         HomeScreen(
@@ -54,33 +72,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _updateDrawerStreak() {
-    final DateTime now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
-    final String todayKey = _dateStorageKey(today);
-
-    final String? lastOpenKey =
-        PreferenceManager.getStringValue(key: _streakLastOpenKey);
-    int streak = PreferenceManager.getIntegerValue(key: _streakDaysKey) ?? 1;
-
-    if (lastOpenKey == null) {
-      streak = 1;
-    } else {
-      final DateTime? lastOpenDate = _dateFromStorageKey(lastOpenKey);
-      if (lastOpenDate != null) {
-        final int dayDiff = today.difference(lastOpenDate).inDays;
-        if (dayDiff == 1) {
-          streak += 1;
-        } else if (dayDiff > 1) {
-          streak = 1;
-        }
-      } else {
-        streak = 1;
-      }
-    }
-
-    PreferenceManager.insertValue(key: _streakDaysKey, value: streak);
-    PreferenceManager.insertValue(key: _streakLastOpenKey, value: todayKey);
-
+    final int streak = AppDrawerStreak.syncToday();
     if (mounted) {
       setState(() => _streakDays = streak);
     } else {
@@ -88,25 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  String _dateStorageKey(DateTime date) {
-    final String month = date.month.toString().padLeft(2, '0');
-    final String day = date.day.toString().padLeft(2, '0');
-    return '${date.year}-$month-$day';
-  }
-
-  DateTime? _dateFromStorageKey(String value) {
-    final List<String> parts = value.split('-');
-    if (parts.length != 3) return null;
-
-    final int? year = int.tryParse(parts[0]);
-    final int? month = int.tryParse(parts[1]);
-    final int? day = int.tryParse(parts[2]);
-    if (year == null || month == null || day == null) return null;
-
-    return DateTime(year, month, day);
-  }
-
-  String get _streakText => '$_streakDays ${_streakDays == 1 ? "Day" : "Days"} Streak';
+  String get _streakText => AppDrawerStreak.streakLabel(_streakDays);
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +88,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       key: _scaffoldKey,
       extendBody: true,
       backgroundColor: surfaceBg,
+      onDrawerChanged: (opened) {
+        if (!opened) _refreshPremiumUiFromPrefs();
+      },
       drawer: _selectedIndex == 0 ? _buildAppDrawer() : null,
       body: IndexedStack(
         index: _selectedIndex,
@@ -296,14 +273,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              "Mohd Salim",
-                              style: GoogleFonts.inter(
-                                fontSize: compact ? 15.3 : 18.7,
-                                fontWeight: FontWeight.w800,
-                                color: isDark ? Colors.white : const Color(0xFF141246),
-                                letterSpacing: 0.2,
-                              ),
+                            Row(
+                              children: [
+                                if (_drawerPremiumBadge)
+                                  Padding(
+                                    padding:
+                                        EdgeInsets.only(right: compact ? 5 : 6),
+                                    child: Icon(
+                                      Icons.workspace_premium_rounded,
+                                      color: const Color(0xFFE6B422),
+                                      size: compact ? 16.8 : 20,
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    PreferenceManager
+                                        .profileDisplayNameForDrawer(),
+                                    style: GoogleFonts.inter(
+                                      fontSize: compact ? 15.3 : 18.7,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark
+                                          ? Colors.white
+                                          : const Color(0xFF141246),
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             SizedBox(height: compact ? 10 : 12),
                             _drawerChip(
@@ -345,10 +341,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color: isDark ? const Color(0xFF2F2F3F) : const Color(0xFFECE7F8),
                 ),
                 _drawerRowItem(
-                  icon: Icons.star_rounded,
-                  title: "Upgrade to Pro",
-                  subtitle: "Unlock AI Chat & Unlimited Stories",
-                  onTap: () => _closeDrawerAndToast("Coming soon"),
+                  icon: _drawerPremiumBadge
+                      ? Icons.workspace_premium_rounded
+                      : Icons.star_rounded,
+                  title:
+                      _drawerPremiumBadge ? "Premium" : "Upgrade to Pro",
+                  subtitle: _drawerPremiumBadge
+                      ? "View plan & manage billing"
+                      : "Unlock AI Chat & Unlimited Stories",
+                  onTap: () async {
+                    _closeDrawer();
+                    await Future<void>.delayed(
+                        const Duration(milliseconds: 120));
+                    if (!mounted) return;
+                    await _openSubscriptionScreen();
+                  },
                   compact: compact,
                 ),
                 SizedBox(height: compact ? 8 : 10),
@@ -628,9 +635,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _drawerUpgradeButton({bool compact = false}) {
+    final premium = _drawerPremiumBadge;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => _closeDrawerAndToast("Coming soon"),
+      onTap: () async {
+        _closeDrawer();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        if (!mounted) return;
+        await _openSubscriptionScreen();
+      },
       child: Container(
         height: compact ? 46 : 54,
         decoration: BoxDecoration(
@@ -649,7 +662,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color: Colors.white, size: 17),
               SizedBox(width: compact ? 6 : 8),
               Text(
-                "Upgrade Now",
+                premium ? "Manage Premium" : "Upgrade Now",
                 style: GoogleFonts.inter(
                   fontSize: compact ? 13.175 : 15.3,
                   fontWeight: FontWeight.w800,

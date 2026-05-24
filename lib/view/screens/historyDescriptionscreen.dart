@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:share_plus/share_plus.dart';
@@ -13,9 +12,12 @@ import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/colors.dart';
 import '../utils/custom_widgets.dart';
+import 'package:spokiai/view/utils/story_pdf_save.dart';
 import '../utils/preference_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:path_provider/path_provider.dart';
+
+import '../../payment/story_freemium.dart';
+import '../../viewmodel/repository/app_repository.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart';
 
@@ -181,6 +183,18 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
 
   Future<void> speak() async {
     if (historyDescriptionResponse.data!.story.toString().isEmpty) return;
+    final sid = historyDescriptionResponse.data?.id?.toString().trim() ?? '';
+    if (sid.isEmpty) return;
+
+    final ok = await StoryFreemium.consumeStoryTtsPlayback(
+      repo: AppRepository(),
+      token: token,
+      playbackKey: 'story:$sid',
+      onToast: (m) {
+        if (mounted) showToast(context: context, message: m);
+      },
+    );
+    if (!ok || !mounted) return;
 
     // Apply settings every time before speaking (safe & recommended)
     await flutterTts.setVolume(volume);
@@ -636,56 +650,69 @@ class _HistoryDescriptionState extends State<HistoryDescription> {
   }
 
   Future<void> downloadPdfExternal(String title, String description) async {
-    final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
-    final ttf = pw.Font.ttf(fontData);
+    try {
+      final fontData =
+          await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+      final ttf = pw.Font.ttf(fontData);
 
-    final safeTitle = title
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
-        .trim()
-        .replaceAll(' ', '_');
+      final cleanedTitle =
+          title.trim().isEmpty ? 'story' : title.trim();
 
-    final pdf = pw.Document();
+      final safeTitle = cleanedTitle
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
+          .trim()
+          .replaceAll(RegExp(r'\s+'), '_');
 
-    pdf.addPage(
-      pw.MultiPage(
-        margin: const pw.EdgeInsets.all(24),
-        build: (context) => [
-          pw.Text(
-            title,
-            style: pw.TextStyle(
-              font: ttf,
-              fontSize: 22,
-              fontWeight: pw.FontWeight.bold,
+      final pdf = pw.Document();
+
+      pdf.addPage(
+        pw.MultiPage(
+          margin: const pw.EdgeInsets.all(24),
+          build: (context) => [
+            pw.Text(
+              cleanedTitle,
+              style: pw.TextStyle(
+                font: ttf,
+                fontSize: 22,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
-          ),
-          pw.SizedBox(height: 16),
+            pw.SizedBox(height: 16),
 
-          // ✅ DESCRIPTION WILL NOW SHOW
-          pw.Text(
-            description,
-            style: pw.TextStyle(
-              font: ttf,
-              fontSize: 14,
+            pw.Text(
+              description.trim(),
+              style: pw.TextStyle(
+                font: ttf,
+                fontSize: 14,
+              ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
 
-    final downloadsDir = await getExternalStorageDirectory();
-    if (downloadsDir == null) return;
+      final bytes = await pdf.save();
+      final savedFile = await writeStoryPdfWithFallback(
+        bytes: bytes,
+        safeFileStem: safeTitle,
+      );
 
-    final externalPath = downloadsDir.path.split('Android')[0] + 'Download';
+      if (!mounted) return;
 
-    final folder = Directory('$externalPath/Spoki AI');
-    if (!await folder.exists()) {
-      await folder.create(recursive: true);
+      if (savedFile == null) {
+        showToast(
+          context: context,
+          message: "Couldn't save PDF on this device.",
+        );
+        return;
+      }
+
+      await presentPdfSavedOpenDialog(
+        context: context,
+        savedFile: savedFile,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showToast(context: context, message: 'Failed to generate PDF.');
     }
-
-    final file = File('${folder.path}/$safeTitle.pdf');
-    await file.writeAsBytes(await pdf.save());
-
-    print('Saved to: ${file.path}');
-    showToast(context: context, message: "Pdf Saved.");
   }
 }

@@ -3,6 +3,9 @@ secrets.json
 
 # Miscellaneous
 *.class
+
+# Local Node API checkout (developed separately — do not commit into this Flutter repo)
+spoki_ai_backend/
 *.log
 *.pyc
 *.swp

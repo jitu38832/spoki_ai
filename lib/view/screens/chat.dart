@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:socket_io_client/socket_io_client.dart';
 import 'package:spokiai/model/aifeedback.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
 import 'package:spokiai/view/screens/dashboard.dart';
 import 'package:spokiai/view/screens/socket.dart'; // Adjust path if needed
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
@@ -18,6 +19,7 @@ import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
 import 'package:spokiai/view/screens/voice_settings.dart';
 import 'package:spokiai/view/services/chat_voice_upload_service.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/viewmodel/cubit/appcubit.dart';
 import 'package:translator/translator.dart';
 import '../utils/colors.dart'; // Make sure appColor is defined
 
@@ -261,6 +263,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       await Future<void>.delayed(Duration.zero);
     }
 
+    if (!ChatFreemium.canStartChatVoicePlayback()) {
+      _appendAiMessage(
+        messageText: messageText,
+        messageId: messageId,
+        suggestionText: suggestionText,
+        aiTtsText: aiTtsText,
+        audioUrl: audioUrl,
+      );
+      return;
+    }
+
     final speakStartAt = DateTime.now();
     unawaited(_speakInEnglish(ttsPlaybackText, messageId: messageId));
     final ready = await _waitUntilTtsReady(
@@ -394,7 +407,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     if (t == 'error') {
       final msg =
-          _coerceTrimmedString(data['message']) ?? 'Feedback request failed';
+          _coerceTrimmedString(data['message']) ??
+              'Improve Sentence request failed';
       final mid = _pendingAiFeedbackMessageId;
       setState(() {
         if (mid != null) {
@@ -405,6 +419,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _pendingAiFeedbackMessageId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      unawaited(ChatFreemium.syncFromBackend(
+        context.read<AppCubit>().repository,
+        _chatAuthToken(),
+      ));
       return;
     }
 
@@ -420,17 +438,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           }
           _pendingAiFeedbackMessageId = null;
         });
+        ChatFreemium.recordImproveSentenceLocalFallbackMirror();
+        unawaited(ChatFreemium.syncFromBackend(
+          context.read<AppCubit>().repository,
+          _chatAuthToken(),
+        ));
       } catch (e) {
         setState(() {
           if (mid != null) {
             _aiFeedbackLoadingIds.remove(mid);
-            _aiFeedbackErrorByMessageId[mid] = 'Invalid feedback data';
+            _aiFeedbackErrorByMessageId[mid] = 'Invalid sentence improvement data';
             _aiFeedbackResultByMessageId.remove(mid);
           }
           _pendingAiFeedbackMessageId = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not parse AI feedback')),
+          const SnackBar(content: Text('Could not parse sentence improvement')),
         );
       }
       return;
@@ -509,6 +532,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         final g =
             widget.partnerDetails['gender']?.toString().trim() ?? 'Female';
         await cubit.setPartnerGender(g);
+        await _refreshFreemiumFromBackend();
       }
 
       socketService.resetInitialFlag();
@@ -543,6 +567,40 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   String _newChatMessageId() =>
       '${DateTime.now().microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
+
+  String _chatAuthToken() =>
+      PreferenceManager.getStringValue(key: 'token')?.trim() ?? '';
+
+  Future<void> _refreshFreemiumFromBackend() async {
+    final token = _chatAuthToken();
+    if (!mounted || token.isEmpty) return;
+    await ChatFreemium.syncFromBackend(
+      context.read<AppCubit>().repository,
+      token,
+    );
+    if (mounted) setState(() {});
+  }
+
+  void _showFreemiumTransientSnack(String? message) {
+    final text = message?.trim() ?? '';
+    if (!mounted || text.isEmpty) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// Refresh limits after returning from [SubscriptionScreen].
+  void _promptChatSubscribe(String message) {
+    ChatFreemium.promptSubscribe(
+      context,
+      message: message,
+      onReturnFromSubscription: () {
+        scheduleMicrotask(_refreshFreemiumFromBackend);
+      },
+    );
+  }
+
+  String get _voiceSwitchLimitSubscribeMessage =>
+      'You used ${ChatFreemium.freeUsesPerFeature} free AI voice selections on the chat screen. Subscribe for unlimited voice changes and aloud replies.';
 
   String _normalizeSttText(String raw) {
     var text = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -1072,11 +1130,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _showTranslationDialog(String englishText) async {
     if (englishText.trim().isEmpty || !mounted) return;
 
+    if (!ChatFreemium.canUseTranslate()) {
+      _promptChatSubscribe(
+        'You used your ${ChatFreemium.freeUsesPerFeature} free translations. Subscribe for unlimited.',
+      );
+      return;
+    }
+
     final partnerLanguageName =
         _coerceTrimmedString(widget.partnerDetails["language"]) ?? "English";
     final targetCode = _getLocaleFromPartnerLanguage(partnerLanguageName);
 
+    final repo = context.read<AppCubit>().repository;
+    final gate = await ChatFreemium.consumeTranslate(repo, _chatAuthToken());
+    if (!mounted) return;
+    if (!gate.consumed) {
+      if (gate.shouldPromptSubscribe) {
+        _promptChatSubscribe(
+          gate.toastMessage ??
+              'You used your ${ChatFreemium.freeUsesPerFeature} free translations. Subscribe for unlimited.',
+        );
+      } else {
+        _showFreemiumTransientSnack(gate.toastMessage);
+      }
+      return;
+    }
+
     if (targetCode == "en-US") {
+      if (mounted) setState(() {});
       _showSimpleTranslationDialog(partnerLanguageName, englishText);
       return;
     }
@@ -1096,6 +1177,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       if (!mounted) return;
       Navigator.pop(context);
+
+      if (mounted) setState(() {});
 
       _showSimpleTranslationDialog(partnerLanguageName, translatedText,
           original: englishText);
@@ -1235,6 +1318,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final cubitCheck = _inworldTts ?? context.read<InworldTtsCubit>();
     if (!cubitCheck.state.audioEnabled) return;
 
+    if (!ChatFreemium.canStartChatVoicePlayback()) {
+      _promptChatSubscribe(_voiceSwitchLimitSubscribeMessage);
+      return;
+    }
+    if (!mounted) return;
+
     await _stopVoicePlayback();
     await _flutterTts.stop();
 
@@ -1266,9 +1355,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final url = audioUrl.trim();
     if (url.isEmpty) return false;
 
+    if (!ChatFreemium.canStartChatVoicePlayback()) {
+      _promptChatSubscribe(_voiceSwitchLimitSubscribeMessage);
+      return false;
+    }
+    if (!mounted) return false;
+
     try {
       await _stopVoicePlayback();
       await _flutterTts.stop();
+      if (!mounted) return false;
       final cubit = _inworldTts ?? context.read<InworldTtsCubit>();
       await cubit.stop();
     } catch (_) {}
@@ -1855,57 +1951,66 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 1),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.mic_none_rounded, size: 11, color: Color(0xFF555A6F)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Tap to speak',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    color: const Color(0xFF555A6F),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 3),
-                      GestureDetector(
-                        onTap: _textController.text.trim().isEmpty
-                            ? (_isVoiceUploading ? null : _toggleVoiceRecording)
-                            : _sendTextMessage,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: _textController.text.trim().isEmpty
-                                ? (_isRecordingVoice ? Colors.redAccent : appColor)
-                                : const Color(0xFF2F63EE),
-                            shape: BoxShape.circle,
-                          ),
-                          child: _isVoiceUploading
-                              ? const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Icon(
-                                  _textController.text.trim().isEmpty
+                      SizedBox(
+                        width: 28,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: _textController.text.trim().isEmpty
+                              ? (_isVoiceUploading ? null : _toggleVoiceRecording)
+                              : _sendTextMessage,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: _textController.text.trim().isEmpty
                                       ? (_isRecordingVoice
-                                          ? Icons.stop_rounded
-                                          : Icons.mic_rounded)
-                                      : Icons.send_rounded,
-                                  color: Colors.white,
-                                  size: 16,
+                                          ? Colors.redAccent
+                                          : appColor)
+                                      : const Color(0xFF2F63EE),
+                                  shape: BoxShape.circle,
                                 ),
+                                child: _isVoiceUploading
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(8),
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Icon(
+                                        _textController.text.trim().isEmpty
+                                            ? (_isRecordingVoice
+                                                ? Icons.stop_rounded
+                                                : Icons.mic_rounded)
+                                            : Icons.send_rounded,
+                                        color: Colors.white,
+                                        size: 12,
+                                      ),
+                              ),
+                              const SizedBox(height: 0.5),
+                              Text(
+                                _textController.text.trim().isEmpty
+                                    ? 'Tap to\nspeak'
+                                    : 'Send',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(
+                                  fontSize: 7.0,
+                                  height: 1.1,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF616578),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -1919,32 +2024,136 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _toggleAiFeedbackForMessage(ChatMessage message) {
+  Future<void> _toggleAiFeedbackForMessage(ChatMessage message) async {
     if (!message.isUser) return;
-    setState(() {
-      if (_expandedAiFeedbackIds.contains(message.id)) {
+    if (_expandedAiFeedbackIds.contains(message.id)) {
+      setState(() {
         _expandedAiFeedbackIds.remove(message.id);
         _aiFeedbackLoadingIds.remove(message.id);
         if (_pendingAiFeedbackMessageId == message.id) {
           _pendingAiFeedbackMessageId = null;
         }
+      });
+      return;
+    }
+
+    if (!ChatFreemium.canUseImproveSentence()) {
+      _promptChatSubscribe(
+        'You used your ${ChatFreemium.freeUsesPerFeature} free Improve Sentence requests. Subscribe for unlimited.',
+      );
+      return;
+    }
+
+    final connected = socketService.isConnected;
+
+    setState(() {
+      _expandedAiFeedbackIds.add(message.id);
+      _aiFeedbackResultByMessageId.remove(message.id);
+      _aiFeedbackErrorByMessageId.remove(message.id);
+      if (connected) {
+        _aiFeedbackLoadingIds.add(message.id);
+        _pendingAiFeedbackMessageId = message.id;
+        socketService.emitAiFeedback(
+          message.text,
+          audioUrl: message.audioUrl,
+        );
       } else {
-        _expandedAiFeedbackIds.add(message.id);
-        _aiFeedbackResultByMessageId.remove(message.id);
-        _aiFeedbackErrorByMessageId.remove(message.id);
-        if (socketService.isConnected) {
-          _aiFeedbackLoadingIds.add(message.id);
-          _pendingAiFeedbackMessageId = message.id;
-          socketService.emitAiFeedback(
-            message.text,
-            audioUrl: message.audioUrl,
-          );
-        } else {
-          _aiFeedbackErrorByMessageId[message.id] =
-              'Not connected. Check your network and try again.';
-        }
+        _aiFeedbackErrorByMessageId[message.id] =
+            'Not connected. Check your network and try again.';
       }
     });
+  }
+
+  Widget _lockedChatAiVoiceCue() {
+    return GestureDetector(
+      onTap: () => _promptChatSubscribe(_voiceSwitchLimitSubscribeMessage),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.grey.shade400),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.volume_off_rounded, size: 20, color: Colors.grey.shade700),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Swap voice twice on the free plan — subscribe for more selections and aloud replies.',
+                style: GoogleFonts.roboto(
+                  fontSize: 12,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade600, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _premiumChatFeatureChip({
+    required IconData featureIcon,
+    required String label,
+    required String subscribeMessage,
+  }) {
+    return Center(
+      child: GestureDetector(
+        onTap: () => _promptChatSubscribe(subscribeMessage),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade400),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade700),
+              const SizedBox(width: 5),
+              Icon(featureIcon, size: 14, color: appColor),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: GoogleFonts.roboto(
+                  fontSize: 12,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Profile picture from Edit Profile (`profile_avatar_asset`), same as drawer / home.
+  Widget _buildUserProfileAvatar({double radius = 14}) {
+    final avatarPath =
+        PreferenceManager.getStringValue(key: 'profile_avatar_asset')?.trim() ??
+            '';
+    ImageProvider<Object>? bg;
+    if (avatarPath.isNotEmpty) {
+      if (avatarPath.startsWith('assets/')) {
+        bg = AssetImage(avatarPath);
+      } else {
+        bg = FileImage(File(avatarPath));
+      }
+    }
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: bg != null ? appColor : const Color(0xFFE3F2FD),
+      backgroundImage: bg,
+      child: bg == null
+          ? const Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18)
+          : null,
+    );
   }
 
   Widget _buildMessageBubble(ChatMessage message) {
@@ -1999,7 +2208,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               : null,
                         ),
                         const SizedBox(width: 8),
-                        Expanded(child: _buildTtsCapsule(message)),
+                        Expanded(
+                          child: ChatFreemium.showChatVoiceUi()
+                              ? _buildTtsCapsule(message)
+                              : _lockedChatAiVoiceCue(),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -2013,24 +2226,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               children: [
                 Expanded(child: _buildVoiceCapsule(message)),
                 const SizedBox(width: 8),
-                const CircleAvatar(
-                  radius: 14,
-                  backgroundColor: Color(0xFFE3F2FD),
-                  child: Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18),
-                ),
+                _buildUserProfileAvatar(),
               ],
             ),
             const SizedBox(height: 6),
           ] else ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
-              children: const [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor: Color(0xFFE3F2FD),
-                  child: Icon(Icons.person, color: Color(0xFF3BA4E8), size: 18),
-                ),
-              ],
+              children: [_buildUserProfileAvatar()],
             ),
             const SizedBox(height: 6),
           ],
@@ -2074,74 +2277,92 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
                 if (!isUser) ...[
                   const SizedBox(height: 10),
-                  Center(
-                    child: GestureDetector(
-                      onTap: () async {
-                        if (isThisMessageSpeaking) {
-                          await _stopSpeaking();
-                        } else {
-                          await _showTranslationDialog(message.text);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.translate, size: 14, color: appColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              "Translate",
-                              style: GoogleFonts.roboto(
-                                fontSize: 12,
-                                color: appColor,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else if (!(message.isQuickReply ?? false)) ...[
-                  const SizedBox(height: 10),
-                  Center(
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => _toggleAiFeedbackForMessage(message),
-                        borderRadius: BorderRadius.circular(14),
+                  if (ChatFreemium.canUseTranslate())
+                    Center(
+                      child: GestureDetector(
+                        onTap: () async {
+                          if (isThisMessageSpeaking) {
+                            await _stopSpeaking();
+                          } else {
+                            await _showTranslationDialog(message.text);
+                          }
+                        },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: showAiFeedbackPanel
-                                  ? appColor
-                                  : Colors.transparent,
-                              width: 1.5,
-                            ),
+                            border: Border.all(color: Colors.grey.shade300),
                           ),
-                          child: Text(
-                            "AI feedback",
-                            style: GoogleFonts.roboto(
-                              fontSize: 12,
-                              color: appColor,
-                              fontWeight: FontWeight.w700,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.translate, size: 14, color: appColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                "Translate",
+                                style: GoogleFonts.roboto(
+                                  fontSize: 12,
+                                  color: appColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    _premiumChatFeatureChip(
+                      featureIcon: Icons.translate,
+                      label: 'Translate (Premium)',
+                      subscribeMessage:
+                          'You used your ${ChatFreemium.freeUsesPerFeature} free translations in chat. Subscribe for unlimited.',
+                    ),
+                ] else if (!(message.isQuickReply ?? false)) ...[
+                  const SizedBox(height: 10),
+                  if (ChatFreemium.canUseImproveSentence())
+                    Center(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            unawaited(_toggleAiFeedbackForMessage(message));
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: showAiFeedbackPanel
+                                    ? appColor
+                                    : Colors.transparent,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Text(
+                              'Improve Sentence',
+                              style: GoogleFonts.roboto(
+                                fontSize: 12,
+                                color: appColor,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
                       ),
+                    )
+                  else
+                    _premiumChatFeatureChip(
+                      featureIcon: Icons.auto_awesome_rounded,
+                      label: 'Improve Sentence (Premium)',
+                      subscribeMessage:
+                          'You used your ${ChatFreemium.freeUsesPerFeature} free Improve Sentence uses in chat. Subscribe for unlimited.',
                     ),
-                  ),
                 ]
               ],
             ),
@@ -2279,7 +2500,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             if (showMoreWays) _buildMoreWaysToSayCard(payload.moreWaysToSay),
             if (!showCorrectSentence && !showImproveSentence && !showMoreWays)
               Text(
-                'No structured feedback in this response.',
+                'No sentence improvement in this response.',
                 style: GoogleFonts.roboto(fontSize: 14, color: Colors.white54),
               ),
           ],

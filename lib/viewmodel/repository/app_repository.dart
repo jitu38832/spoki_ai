@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 
+import 'package:spokiai/model/chat_freemium_quota.dart';
 import 'package:spokiai/model/commonresponse.dart';
 import 'package:spokiai/model/generatestory.dart';
 import 'package:spokiai/model/getprofile.dart';
@@ -14,7 +15,10 @@ import 'package:spokiai/model/quizhistory.dart';
 import 'package:spokiai/model/quizques.dart';
 import 'package:spokiai/model/signup.dart';
 import 'package:spokiai/model/storyhistory.dart';
+import 'package:spokiai/model/story_freemium_quota.dart';
 import 'package:spokiai/model/submitquiz.dart';
+import 'package:spokiai/payment/active_subscription_summary.dart';
+
 import 'package:spokiai/model/wordmeaning.dart';
 import 'package:spokiai/viewmodel/repository/response_status.dart';
 
@@ -437,6 +441,279 @@ class AppRepository {
       );
     } on Exception catch (_) {
       rethrow;
+    }
+  }
+
+  /// Records a StoreKit / Play Billing subscription with the backend after a
+  /// successful purchase or restore (`POST subscriptions/iap/register`).
+  Future<ResponseData> registerIapSubscription(
+    String token,
+    Map<String, dynamic> body,
+  ) async {
+    try {
+      final response = await ApiService(token: token).sendRequest.post(
+            'subscriptions/iap/register',
+            data: body,
+            options: Options(
+              contentType: Headers.jsonContentType,
+              responseType: ResponseType.json,
+            ),
+          );
+
+      final raw = response.data;
+      Map<String, dynamic> map = {};
+      if (raw is Map<String, dynamic>) {
+        map = raw;
+      } else if (raw is Map) {
+        map = Map<String, dynamic>.from(raw);
+      }
+
+      return ResponseData(
+        statusCode: response.statusCode,
+        response: CommonResponse.fromJson(map),
+      );
+    } on DioException catch (e) {
+      final message = _extractErrorMessage(
+        e.response?.data,
+        fallback: 'Could not register subscription with the server.',
+      );
+      throw ErrorData(
+        message: message,
+        code: e.response?.statusCode,
+      );
+    } on Exception catch (_) {
+      rethrow;
+    }
+  }
+
+  /// QA only: `POST subscriptions/qa/test-grant` — server grants Premium for allow-listed emails only.
+  Future<ResponseData> grantQaSubscriptionBypass(String token) async {
+    try {
+      final response = await ApiService(token: token).sendRequest.post(
+            'subscriptions/qa/test-grant',
+            data: const <String, dynamic>{},
+            options: Options(
+              contentType: Headers.jsonContentType,
+              responseType: ResponseType.json,
+            ),
+          );
+
+      final raw = response.data;
+      Map<String, dynamic> map = {};
+      if (raw is Map<String, dynamic>) {
+        map = raw;
+      } else if (raw is Map) {
+        map = Map<String, dynamic>.from(raw);
+      }
+
+      return ResponseData(
+        statusCode: response.statusCode,
+        response: CommonResponse.fromJson(map),
+      );
+    } on DioException catch (e) {
+      final raw = e.response?.data;
+      final code = e.response?.statusCode;
+      if (raw is Map<String, dynamic> || raw is Map) {
+        final map = raw is Map<String, dynamic>
+            ? raw
+            : Map<String, dynamic>.from((raw as Map).map((k, v) => MapEntry('$k', v)));
+        return ResponseData(
+          statusCode: code,
+          response: CommonResponse.fromJson(map),
+        );
+      }
+      throw ErrorData(
+        message: _extractErrorMessage(
+          raw,
+          fallback: 'Could not activate test subscription.',
+        ),
+        code: code,
+      );
+    } on Exception catch (_) {
+      rethrow;
+    }
+  }
+
+  /// `GET subscriptions/me` — active or latest subscription for the signed-in user.
+  Future<ActiveSubscriptionSummary?> getMySubscription(String token) async {
+    try {
+      final response =
+          await ApiService(token: token).sendRequest.get('subscriptions/me');
+      final raw = response.data;
+      if (raw is! Map<String, dynamic> && raw is! Map) {
+        return null;
+      }
+      final map = raw is Map<String, dynamic>
+          ? raw
+          : Map<String, dynamic>.from((raw as Map).map((k, v) => MapEntry('$k', v)));
+
+      final data = map['data'];
+      if (data == null) return null;
+      return ActiveSubscriptionSummary.fromJson(data);
+    } on DioException {
+      return null;
+    } on Exception catch (_) {
+      return null;
+    }
+  }
+
+  /// Current chat freemium usage for signed-in account (see docs/chat_freemium_api.md).
+  Future<ChatFreemiumQuota> getChatFreemiumQuota(String token) async {
+    try {
+      final response =
+          await ApiService(token: token).sendRequest.get('users/me/chat-freemium');
+      final raw = response.data;
+      final Map<String, dynamic> map;
+      if (raw is Map<String, dynamic>) {
+        map = raw;
+      } else if (raw is Map) {
+        map = Map<String, dynamic>.from(raw.map((k, v) => MapEntry('$k', v)));
+      } else {
+        throw ErrorData(
+          message: 'Invalid chat quota response from server.',
+          code: response.statusCode,
+        );
+      }
+      return ChatFreemiumQuota.fromBackendJson(map);
+    } on ErrorData {
+      rethrow;
+    } on DioException catch (e) {
+      final message = _extractErrorMessage(
+        e.response?.data,
+        fallback: 'Could not load chat limits.',
+      );
+      throw ErrorData(
+        message: message,
+        code: e.response?.statusCode,
+      );
+    }
+  }
+
+  /// Atomically consumes one unit for [feature] if allowed.
+  Future<ChatFreemiumConsumeResult> consumeChatFreemium(
+    String token,
+    ChatFreemiumConsumeFeatureApi feature,
+  ) async {
+    try {
+      final response = await ApiService(token: token).sendRequest.post(
+            'users/me/chat-freemium/consume',
+            data: <String, dynamic>{'feature': feature.wireValue},
+            options: Options(
+              contentType: Headers.jsonContentType,
+              responseType: ResponseType.json,
+            ),
+          );
+      final raw = response.data;
+      final map = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map
+              ? Map<String, dynamic>.from(raw.map((k, v) => MapEntry('$k', v)))
+              : <String, dynamic>{});
+      return ChatFreemiumConsumeResult.fromHttp(
+        map,
+        httpStatusCode: response.statusCode,
+      );
+    } on DioException catch (e) {
+      final raw = e.response?.data;
+      final code = e.response?.statusCode;
+      if (raw is Map<String, dynamic> || raw is Map) {
+        final map = raw is Map<String, dynamic>
+            ? raw
+            : Map<String, dynamic>.from((raw as Map).map((k, v) => MapEntry('$k', v)));
+        return ChatFreemiumConsumeResult.fromHttp(map, httpStatusCode: code);
+      }
+      return ChatFreemiumConsumeResult(
+        allowed: false,
+        success: false,
+        message: _extractErrorMessage(
+          raw,
+          fallback: 'Could not verify chat limits. Try again.',
+        ),
+        quota: null,
+      );
+    }
+  }
+
+  Future<StoryFreemiumQuota> getStoryFreemiumQuota(String token) async {
+    try {
+      final response = await ApiService(token: token)
+          .sendRequest
+          .get('users/me/story-freemium');
+      final raw = response.data;
+      final Map<String, dynamic> map;
+      if (raw is Map<String, dynamic>) {
+        map = raw;
+      } else if (raw is Map) {
+        map = Map<String, dynamic>.from(raw.map((k, v) => MapEntry('$k', v)));
+      } else {
+        throw ErrorData(
+          message: 'Invalid story quota response from server.',
+          code: response.statusCode,
+        );
+      }
+      return StoryFreemiumQuota.fromBackendJson(map);
+    } on ErrorData {
+      rethrow;
+    } on DioException catch (e) {
+      throw ErrorData(
+        message: _extractErrorMessage(
+          e.response?.data,
+          fallback: 'Could not load story limits.',
+        ),
+        code: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<StoryFreemiumConsumeResult> consumeStoryFreemium(
+    String token, {
+    required String feature,
+    String? storyId,
+    String? playbackKey,
+  }) async {
+    final body = <String, dynamic>{
+      'feature': feature,
+      if (storyId != null && storyId.isNotEmpty) 'story_id': storyId,
+      if (playbackKey != null && playbackKey.isNotEmpty)
+        'playback_key': playbackKey,
+    };
+    try {
+      final response = await ApiService(token: token).sendRequest.post(
+            'users/me/story-freemium/consume',
+            data: body,
+            options: Options(
+              contentType: Headers.jsonContentType,
+              responseType: ResponseType.json,
+            ),
+          );
+      final raw = response.data;
+      final map = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map
+              ? Map<String, dynamic>.from(raw.map((k, v) => MapEntry('$k', v)))
+              : <String, dynamic>{});
+      return StoryFreemiumConsumeResult.fromHttp(
+        map,
+        httpStatusCode: response.statusCode,
+      );
+    } on DioException catch (e) {
+      final raw = e.response?.data;
+      final code = e.response?.statusCode;
+      if (raw is Map<String, dynamic> || raw is Map) {
+        final map = raw is Map<String, dynamic>
+            ? raw
+            : Map<String, dynamic>.from((raw as Map).map((k, v) => MapEntry('$k', v)));
+        return StoryFreemiumConsumeResult.fromHttp(map, httpStatusCode: code);
+      }
+      return StoryFreemiumConsumeResult(
+        allowed: false,
+        success: false,
+        message: _extractErrorMessage(
+          raw,
+          fallback: 'Could not verify story limits. Try again.',
+        ),
+        quota: null,
+      );
     }
   }
 

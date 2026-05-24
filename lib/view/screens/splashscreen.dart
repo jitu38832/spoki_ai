@@ -9,6 +9,10 @@ import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_navigator.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/payment/post_login_entitlements_sync.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
+import 'package:spokiai/payment/story_freemium.dart';
+import 'package:spokiai/payment/SubscriptionService.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import 'package:spokiai/viewmodel/cubit/appcubit.dart';
 
@@ -21,8 +25,12 @@ class Splashscreen extends StatefulWidget {
 
 class _SplashscreenState extends State<Splashscreen>
     with SingleTickerProviderStateMixin {
+  /// Splash stays visible at least this long before navigating away (after work finished).
+  static const Duration _minimumSplashDisplay = Duration(seconds: 6);
+
   bool _navigated = false;
   bool _awaitingProfileForRoute = false;
+  late final DateTime _splashShownAt;
 
   late final AnimationController _controller;
   late final Animation<double> _pulse;
@@ -52,6 +60,11 @@ class _SplashscreenState extends State<Splashscreen>
   }
 
   Future<void> _forceLogoutToLogin(BuildContext context) async {
+    await _ensureMinimumSplashElapsed();
+    if (!mounted || _navigated) return;
+    ChatFreemium.resetVolatileState();
+    StoryFreemium.resetVolatileState();
+    SubscriptionService.instance.clearSessionBillingState();
     PreferenceManager.clearPreferences();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
@@ -73,7 +86,16 @@ class _SplashscreenState extends State<Splashscreen>
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     _fade = Tween<double>(begin: 0.8, end: 1.0)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _splashShownAt = DateTime.now();
     checkApiStatus();
+  }
+
+  Future<void> _ensureMinimumSplashElapsed() async {
+    final elapsed = DateTime.now().difference(_splashShownAt);
+    final remaining = _minimumSplashDisplay - elapsed;
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
+    }
   }
 
   @override
@@ -96,6 +118,8 @@ class _SplashscreenState extends State<Splashscreen>
             if (!mounted) return;
 
             if (token.isEmpty) {
+              await _ensureMinimumSplashElapsed();
+              if (!mounted || _navigated) return;
               _navigated = true;
               CustomNavigator.pushAndRemoveUntil(
                 context: context,
@@ -113,10 +137,16 @@ class _SplashscreenState extends State<Splashscreen>
           if (_awaitingProfileForRoute &&
               state.status == AppStatus.getProfileSuccess) {
             _awaitingProfileForRoute = false;
-            _navigated = true;
             final response =
                 state.responseData?.response as GetProfileResponse;
-            if (!mounted) return;
+            PreferenceManager.cacheProfileDisplayName(response.data?.name);
+            PreferenceManager.cacheProfileEmail(response.data?.email);
+            await syncBillingAndChatQuotasAfterLogin(
+              context.read<AppCubit>().repository,
+            );
+            await _ensureMinimumSplashElapsed();
+            if (!mounted || _navigated) return;
+            _navigated = true;
             _goHomeOrProfile(context, response);
             return;
           }
@@ -128,8 +158,9 @@ class _SplashscreenState extends State<Splashscreen>
               await _forceLogoutToLogin(context);
               return;
             }
+            await _ensureMinimumSplashElapsed();
+            if (!mounted || _navigated) return;
             _navigated = true;
-            if (!mounted) return;
             CustomNavigator.pushAndRemoveUntil(
               context: context,
               screen: const Editprofile(isPostLoginSetup: true),
@@ -146,6 +177,8 @@ class _SplashscreenState extends State<Splashscreen>
               _awaitingProfileForRoute = true;
               context.read<AppCubit>().getProfile(token);
             } else {
+              await _ensureMinimumSplashElapsed();
+              if (!mounted || _navigated) return;
               _navigated = true;
               CustomNavigator.pushAndRemoveUntil(
                 context: context,

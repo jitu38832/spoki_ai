@@ -10,6 +10,9 @@ import 'package:spokiai/view/screens/login.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
 import 'package:spokiai/view/utils/language_options.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
+import 'package:spokiai/payment/story_freemium.dart';
+import 'package:spokiai/payment/SubscriptionService.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 
 import '../../viewmodel/cubit/appcubit.dart';
@@ -32,6 +35,9 @@ class _EditprofileState extends State<Editprofile> {
   static const String _kLanguage = 'profile_spoken_language';
   static const String _kAvatar = 'profile_avatar_asset';
 
+  /// Default age for new accounts (user can change on the slider before save).
+  static const int _defaultProfileAge = 22;
+
   /// Predefined avatar options shown in picker dialog.
   static const List<String> _avatarOptionPaths = <String>[
     'assets/images/male-1.jpeg',
@@ -52,7 +58,7 @@ class _EditprofileState extends State<Editprofile> {
   TextEditingController nameController = TextEditingController();
 
   String? _selectedGender;
-  int? _selectedAge;
+  int _selectedAge = _defaultProfileAge;
   String? _selectedEnglishLevel;
   String? _selectedLanguage;
   String _selectedAvatarPath = _avatarOptionPaths.first;
@@ -67,6 +73,9 @@ class _EditprofileState extends State<Editprofile> {
   }
 
   Future<void> _forceLogoutToLogin() async {
+    ChatFreemium.resetVolatileState();
+    StoryFreemium.resetVolatileState();
+    SubscriptionService.instance.clearSessionBillingState();
     PreferenceManager.clearPreferences();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
@@ -137,7 +146,18 @@ class _EditprofileState extends State<Editprofile> {
     super.initState();
     token = PreferenceManager.getStringValue(key: "token") ?? "";
     _loadAvatarFromPrefs();
+    _loadAgeFromPrefsIfValid();
     BlocProvider.of<AppCubit>(context).getProfile(token);
+  }
+
+  /// Restores age from local prefs when valid (helps if API fails); new users stay at [_defaultProfileAge].
+  void _loadAgeFromPrefsIfValid() {
+    final raw = PreferenceManager.getStringValue(key: _kAge)?.trim();
+    if (raw == null || raw.isEmpty) return;
+    final parsed = int.tryParse(raw);
+    if (parsed != null && _ageYears.contains(parsed)) {
+      _selectedAge = parsed;
+    }
   }
 
   void _loadAvatarFromPrefs() {
@@ -153,7 +173,9 @@ class _EditprofileState extends State<Editprofile> {
   void _applyProfileDataFromApi(Data? d) {
     _selectedGender = _displayGender(d?.gender);
     final apiAge = d?.age;
-    _selectedAge = (apiAge != null && _ageYears.contains(apiAge)) ? apiAge : null;
+    if (apiAge != null && _ageYears.contains(apiAge)) {
+      _selectedAge = apiAge;
+    }
     _selectedEnglishLevel = _displayEnglishLevel(d?.englishLevel);
     final language = d?.spokenLanguage?.trim();
     _selectedLanguage = (language == null || language.isEmpty) ? null : language;
@@ -161,13 +183,14 @@ class _EditprofileState extends State<Editprofile> {
   }
 
   void _persistProfileExtras() {
+    PreferenceManager.cacheProfileDisplayName(nameController.text);
     PreferenceManager.insertValue(
       key: _kGender,
       value: _selectedGender ?? '',
     );
     PreferenceManager.insertValue(
       key: _kAge,
-      value: _selectedAge?.toString() ?? '',
+      value: _selectedAge.toString(),
     );
     PreferenceManager.insertValue(
       key: _kEnglish,
@@ -186,10 +209,6 @@ class _EditprofileState extends State<Editprofile> {
   bool _validateExtrasForPostLogin() {
     if (_selectedGender == null || _selectedGender!.isEmpty) {
       showToast(context: context, message: 'Please select gender');
-      return false;
-    }
-    if (_selectedAge == null) {
-      showToast(context: context, message: 'Please select your age');
       return false;
     }
     if (_selectedEnglishLevel == null ||
@@ -689,7 +708,7 @@ class _EditprofileState extends State<Editprofile> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final double ageValue = (_selectedAge ?? 22).toDouble();
+    final double ageValue = _selectedAge.toDouble();
     return PopScope(
       canPop: !widget.isPostLoginSetup,
       child: Scaffold(
@@ -702,6 +721,8 @@ class _EditprofileState extends State<Editprofile> {
               final d = getProfileResponse.data;
               emailController.text = d?.email?.toString() ?? "";
               nameController.text = d?.name?.toString() ?? "";
+              PreferenceManager.cacheProfileDisplayName(d?.name);
+              PreferenceManager.cacheProfileEmail(d?.email?.toString());
               setState(() {
                 _applyProfileDataFromApi(d);
               });
@@ -724,6 +745,7 @@ class _EditprofileState extends State<Editprofile> {
                 name: "Editprofile",
               );
               _persistProfileExtras();
+              PreferenceManager.cacheProfileEmail(emailController.text.trim());
               if (!context.mounted) return;
               showToast(
                 context: context,

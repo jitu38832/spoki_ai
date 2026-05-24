@@ -19,12 +19,12 @@ import '../../viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/colors.dart';
 import '../utils/custom_widgets.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:spokiai/view/utils/story_pdf_save.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:open_filex/open_filex.dart';
 
+import 'package:spokiai/payment/story_freemium.dart';
+import 'package:spokiai/viewmodel/repository/app_repository.dart';
 /// Quiz readiness from Socket `storyQuizStatus` (`quizGenerationStatus`).
 enum _StoryQuizGenPhase {
   checking,
@@ -53,14 +53,8 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
   );
-  static const String _pdfDownloadChannelId = 'story_pdf_downloads';
-  static const String _pdfDownloadChannelName = 'Story PDF Downloads';
-  static const String _pdfDownloadChannelDescription =
-      'Notifications for downloaded story PDFs';
   static const String _kStoryGuideSeen = 'story_word_guide_seen_v1';
   static const String _kProfileSpokenLanguage = 'profile_spoken_language';
-  final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
   late FlutterTts flutterTts;
 
   final SocketService _storyQuizSocket = SocketService();
@@ -86,7 +80,6 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
   @override
   void initState() {
     initTts();
-    // unawaited(_initLocalNotifications());
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startStoryQuizStatusFlow();
@@ -574,7 +567,9 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     String? selectedVoiceId,
   }) async {
     final story = widget.generateStoryResponse.data?.story.toString() ?? '';
-    if (story.isEmpty || !mounted) return;
+    final storyId =
+        widget.generateStoryResponse.data?.id?.toString().trim() ?? '';
+    if (story.isEmpty || !mounted || storyId.isEmpty) return;
     final cubit = context.read<InworldTtsCubit>();
     if (!cubit.state.audioEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -582,6 +577,15 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       );
       return;
     }
+    final playbackOk = await StoryFreemium.consumeStoryTtsPlayback(
+      repo: AppRepository(),
+      token: PreferenceManager.getStringValue(key: 'token') ?? '',
+      playbackKey: 'story:$storyId',
+      onToast: (m) {
+        if (mounted) showToast(context: context, message: m);
+      },
+    );
+    if (!playbackOk || !mounted) return;
     setState(() {
       _isStoryTtsPreparing = true;
       _isSofyStorySpeaking = false;
@@ -730,52 +734,7 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
     }
   }
 
-  // Future<void> _initLocalNotifications() async {
-  //   const androidSettings = AndroidInitializationSettings('@mipmap/app_icon');
-  //   const settings = InitializationSettings(android: androidSettings);
-  //   await _localNotifications.initialize(
-  //     settings: settings,
-  //     onDidReceiveNotificationResponse: _onNotificationTap,
-  //   );
-  //
-  //   final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
-  //       AndroidFlutterLocalNotificationsPlugin>();
-  //   await androidPlugin?.requestNotificationsPermission();
-  //   await androidPlugin?.createNotificationChannel(
-  //     const AndroidNotificationChannel(
-  //       _pdfDownloadChannelId,
-  //       _pdfDownloadChannelName,
-  //       description: _pdfDownloadChannelDescription,
-  //       importance: Importance.high,
-  //     ),
-  //   );
-  // }
 
-  Future<void> _onNotificationTap(NotificationResponse response) async {
-    final payload = response.payload?.trim();
-    if (payload == null || payload.isEmpty) return;
-    await OpenFilex.open(payload);
-  }
-
-  Future<void> _showPdfDownloadedNotification(File file) async {
-    const androidDetails = AndroidNotificationDetails(
-      _pdfDownloadChannelId,
-      _pdfDownloadChannelName,
-      channelDescription: _pdfDownloadChannelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      category: AndroidNotificationCategory.status,
-      visibility: NotificationVisibility.public,
-    );
-    const details = NotificationDetails(android: androidDetails);
-    // await _localNotifications.show(
-    //   id: file.path.hashCode,
-    //   title: 'Story PDF downloaded',
-    //    body: 'Tap to open ${file.uri.pathSegments.last}',
-    //   notificationDetails: details,
-    //   payload: file.path,
-    // );
-  }
 
   @override
   void dispose() {
@@ -1264,49 +1223,23 @@ class _StorydescriptionScreenState extends State<StorydescriptionScreen> {
       );
 
       final bytes = await pdf.save();
-      final candidateDirs = <Directory>[];
 
-      final downloadsDir = await getDownloadsDirectory();
-      if (downloadsDir != null) {
-        candidateDirs.add(Directory('${downloadsDir.path}/Spoki AI'));
-      }
-
-      if (Platform.isAndroid) {
-        candidateDirs.add(Directory('/storage/emulated/0/Download/Spoki AI'));
-      }
-
-      final appDocs = await getApplicationDocumentsDirectory();
-      candidateDirs.add(Directory('${appDocs.path}/Spoki AI'));
-
-      File? savedFile;
-      for (final folder in candidateDirs) {
-        try {
-          if (!await folder.exists()) {
-            await folder.create(recursive: true);
-          }
-          final file = File('${folder.path}/$safeTitle.pdf');
-          await file.writeAsBytes(bytes, flush: true);
-          if (await file.exists() && await file.length() > 0) {
-            savedFile = file;
-            break;
-          }
-        } catch (_) {
-          // Try next writable location.
-        }
-      }
+      final savedFile = await writeStoryPdfWithFallback(
+        bytes: bytes,
+        safeFileStem: safeTitle,
+      );
 
       if (savedFile == null) {
         if (!mounted) return;
-        showToast(context: context, message: "Couldn't save PDF on this device.");
+        showToast(
+          context: context,
+          message: "Couldn't save PDF on this device.",
+        );
         return;
       }
 
-      await _showPdfDownloadedNotification(savedFile);
       if (!mounted) return;
-      showToast(
-        context: context,
-        message: "PDF saved: ${savedFile.path}",
-      );
+      await presentPdfSavedOpenDialog(context: context, savedFile: savedFile);
     } catch (_) {
       if (!mounted) return;
       showToast(context: context, message: "Failed to generate PDF.");

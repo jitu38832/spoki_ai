@@ -7,8 +7,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:spokiai/model/homebanner.dart';
+import 'package:spokiai/payment/SubscriptionScreen.dart';
+import 'package:spokiai/payment/SubscriptionService.dart';
 import 'package:spokiai/view/screens/editprofile.dart';
 import 'package:spokiai/view/screens/settings.dart';
+import 'package:spokiai/view/utils/app_drawer_streak.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
@@ -28,8 +31,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const String _streakDaysKey = 'home_drawer_streak_days';
-  static const String _streakLastOpenKey = 'home_drawer_streak_last_open';
   static const String _androidAppLink =
       'https://play.google.com/store/apps/details?id=com.spokiai&pcampaignid=web_share';
   static const String _iosAppLink =
@@ -37,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<BannerList> bannerList = [];
   int _currentIndex = 0;
-  int _streakDays = 1;
+  int _streakDays = 0;
   final CarouselSliderController _carouselController =
       CarouselSliderController();
 
@@ -45,65 +46,25 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     BlocProvider.of<AppCubit>(context).bannerList();
     _updateDrawerStreak();
+    SubscriptionService.instance.reloadBillingFlagFromPrefs();
     super.initState();
   }
 
+  void _refreshPremiumBadge() {
+    SubscriptionService.instance.reloadBillingFlagFromPrefs();
+    if (mounted) setState(() {});
+  }
+
   void _updateDrawerStreak() {
-    final DateTime now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
-    final String todayKey = _dateStorageKey(today);
-
-    final String? lastOpenKey =
-        PreferenceManager.getStringValue(key: _streakLastOpenKey);
-    int streak = PreferenceManager.getIntegerValue(key: _streakDaysKey) ?? 1;
-
-    if (lastOpenKey == null) {
-      streak = 1;
-    } else {
-      final DateTime? lastOpenDate = _dateFromStorageKey(lastOpenKey);
-      if (lastOpenDate != null) {
-        final int dayDiff = today.difference(lastOpenDate).inDays;
-        if (dayDiff == 1) {
-          streak += 1;
-        } else if (dayDiff > 1) {
-          streak = 1;
-        }
-      } else {
-        streak = 1;
-      }
-    }
-
-    PreferenceManager.insertValue(key: _streakDaysKey, value: streak);
-    PreferenceManager.insertValue(key: _streakLastOpenKey, value: todayKey);
-
+    final int streak = AppDrawerStreak.syncToday();
     if (mounted) {
-      setState(() {
-        _streakDays = streak;
-      });
+      setState(() => _streakDays = streak);
     } else {
       _streakDays = streak;
     }
   }
 
-  String _dateStorageKey(DateTime date) {
-    final String month = date.month.toString().padLeft(2, '0');
-    final String day = date.day.toString().padLeft(2, '0');
-    return '${date.year}-$month-$day';
-  }
-
-  DateTime? _dateFromStorageKey(String value) {
-    final List<String> parts = value.split('-');
-    if (parts.length != 3) return null;
-
-    final int? year = int.tryParse(parts[0]);
-    final int? month = int.tryParse(parts[1]);
-    final int? day = int.tryParse(parts[2]);
-    if (year == null || month == null || day == null) return null;
-
-    return DateTime(year, month, day);
-  }
-
-  String get _streakText => '$_streakDays ${_streakDays == 1 ? "Day" : "Days"} Streak';
+  String get _streakText => AppDrawerStreak.streakLabel(_streakDays);
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +145,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 fontWeight: FontWeight.w800,
                 color: textPrimary,
                 letterSpacing: 0.4,
+              ),
+            ),
+          ),
+          Tooltip(
+            message: 'Go Premium',
+            child: Material(
+              color: cardSurface,
+              shape: const CircleBorder(),
+              elevation: 0,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SubscriptionScreen(),
+                    ),
+                  );
+                  _refreshPremiumBadge();
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: cardSurface,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: surfaceMuted),
+                  ),
+                  child: const Icon(
+                    Icons.workspace_premium_rounded,
+                    color: Color(0xFFE6B422),
+                    size: 24,
+                  ),
+                ),
               ),
             ),
           ),
@@ -706,9 +700,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Positioned(
-                        top: 0,
-                        right: 0,
+                      Align(
+                        alignment: Alignment.topRight,
                         child: InkWell(
                           onTap: _closeDrawer,
                           borderRadius: BorderRadius.circular(18),
@@ -730,7 +723,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Text(
-                        "Mohd Salim",
+                        PreferenceManager.profileDisplayNameForDrawer(),
                         style: GoogleFonts.inter(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,

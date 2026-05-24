@@ -6,7 +6,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:spokiai/core/inworld_tts_voice_catalog.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_cubit.dart';
 import 'package:spokiai/logic/inworld_tts/inworld_tts_state.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/viewmodel/cubit/appcubit.dart';
+import 'package:spokiai/viewmodel/repository/app_repository.dart';
 import '../utils/colors.dart';
 
 class VoiceSettingsScreen extends StatefulWidget {
@@ -159,22 +162,59 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
   Future<void> _commitSelectionAndClose(String voiceId) async {
     final cubit = context.read<InworldTtsCubit>();
+    final trimmed = voiceId.trim();
+    AppRepository? chatRepoForGate;
+    if (!widget.fromStory) {
+      chatRepoForGate = context.read<AppCubit>().repository;
+    }
     await cubit.stop();
 
-    if (isMaleInworldVoiceId(voiceId)) {
-      await cubit.setMaleVoice(voiceId);
+    if (!widget.fromStory) {
+      final repo = chatRepoForGate!;
+      final previousEffective = cubit.state.effectiveVoiceId.trim();
+      if (trimmed != previousEffective) {
+        final token =
+            PreferenceManager.getStringValue(key: 'token')?.trim() ?? '';
+        final gate = await ChatFreemium.consumeVoiceTts(repo, token);
+        if (!gate.consumed) {
+          if (!mounted) return;
+          if (gate.shouldPromptSubscribe) {
+            ChatFreemium.promptSubscribe(
+              context,
+              message: gate.toastMessage ??
+                  'You used ${ChatFreemium.freeUsesPerFeature} free AI voice selections. Subscribe for more.',
+              onReturnFromSubscription: () {
+                final t =
+                    PreferenceManager.getStringValue(key: 'token')?.trim() ??
+                        '';
+                unawaited(ChatFreemium.syncFromBackend(repo, t));
+              },
+            );
+          } else {
+            final msg =
+                gate.toastMessage ?? 'Could not verify voice limits. Try again.';
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(msg)));
+          }
+          return;
+        }
+      }
+    }
+
+    if (isMaleInworldVoiceId(trimmed)) {
+      await cubit.setMaleVoice(trimmed);
       await cubit.setPartnerGender('Male');
-    } else if (isFemaleInworldVoiceId(voiceId)) {
-      await cubit.setFemaleVoice(voiceId);
+    } else if (isFemaleInworldVoiceId(trimmed)) {
+      await cubit.setFemaleVoice(trimmed);
       await cubit.setPartnerGender('Female');
     }
-    PreferenceManager.insertValue(key: _selectedVoicePrefKey, value: voiceId);
+    PreferenceManager.insertValue(key: _selectedVoicePrefKey, value: trimmed);
 
     if (!mounted) return;
     if (widget.fromStory) {
       Navigator.pop(context, {
         'playStoryTts': true,
-        'selectedVoiceId': voiceId,
+        'selectedVoiceId': trimmed,
       });
     } else {
       Navigator.pop(context);

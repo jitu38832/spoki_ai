@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,9 +7,12 @@ import 'package:spokiai/model/generatestory.dart';
 import 'package:spokiai/view/screens/storyDescription.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
+import 'package:spokiai/payment/story_freemium.dart';
 import 'package:spokiai/viewmodel/cubit/app_state.dart';
 import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/custom_widgets.dart';
+import '../../viewmodel/repository/app_repository.dart';
 
 /// Create Story page typography scale (−10%).
 double _createStoryFs(double px) => px * 0.9;
@@ -32,7 +37,8 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
       TextEditingController();
   final FocusNode _storyTopicFocusNode = FocusNode();
   String _selectedLength = 'Short';
-  String _selectedGenre = 'Fantasy';
+  /// Default to a server-allowed free genre (non‑premium cannot pick Premium-only genres).
+  String _selectedGenre = 'Adventure';
   final String _selectedStyle = 'Random';
   String? _selectedLevel;
 
@@ -86,10 +92,26 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
     'Motivational': Color(0xFFE53D83),
   };
 
+  bool get _storyPremiumUnlocked => ChatFreemium.isPremiumUnlocked();
+
   @override
   void initState() {
     token = PreferenceManager.getStringValue(key: "token") ?? "";
     super.initState();
+  }
+
+  void _clampSelectionsToFreemiumIfNeeded() {
+    if (_storyPremiumUnlocked) return;
+    var changed = false;
+    if (!StoryFreemium.isFreeGenre(_selectedGenre)) {
+      _selectedGenre = 'Adventure';
+      changed = true;
+    }
+    if (_selectedLength != 'Short') {
+      _selectedLength = 'Short';
+      changed = true;
+    }
+    if (changed && mounted) setState(() {});
   }
 
   @override
@@ -105,6 +127,15 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
     } else {
       FocusManager.instance.primaryFocus?.unfocus();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _clampSelectionsToFreemiumIfNeeded();
+    });
   }
 
   @override
@@ -169,6 +200,19 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                   const SizedBox(height: 12),
                   _softSection(children: [
                     _sectionTitle("Choose Story Genre"),
+                    if (!_storyPremiumUnlocked) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Free genres: Adventure, Science fiction, Mystery, Drama, Historical. '
+                        'Tap a locked row to see how to unlock the rest.',
+                        style: GoogleFonts.inter(
+                          fontSize: _createStoryFs(10),
+                          height: 1.3,
+                          fontWeight: FontWeight.w500,
+                          color: _textSecondary,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     _buildGenreDropdown(),
                   ]),
@@ -184,6 +228,10 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                       if (state.status == AppStatus.generateStorySuccess) {
                         GenerateStoryResponse generateStoryResponse =
                             state.responseData?.response as GenerateStoryResponse;
+                        unawaited(StoryFreemium.syncFromBackend(
+                          AppRepository(),
+                          token.trim(),
+                        ));
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -194,10 +242,27 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                         );
                       }
                       if (state.status == AppStatus.generateStoryError) {
-                        showToast(
-                          context: context,
-                          message: state.errorData?.message.toString() ?? "",
-                        );
+                        final msg = state.errorData?.message.toString() ?? '';
+                        if (state.errorData?.code == 403) {
+                          if (mounted) {
+                            StoryFreemium.promptSubscribe(
+                              context,
+                              message: msg.isNotEmpty
+                                  ? msg
+                                  : 'Premium is required.',
+                              onReturn: () {
+                                if (mounted && token.trim().isNotEmpty) {
+                                  unawaited(StoryFreemium.syncFromBackend(
+                                    AppRepository(),
+                                    token.trim(),
+                                  ));
+                                }
+                              },
+                            );
+                          }
+                        } else if (mounted) {
+                          showToast(context: context, message: msg);
+                        }
                       }
                     },
                     builder: (context, state) {
@@ -299,33 +364,50 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
       child: Row(
         children: _lengthOptions.map((option) {
           final isSelected = _selectedLength == option;
+          final lengthLocked =
+              !_storyPremiumUnlocked && option.toLowerCase() != 'short';
           return Expanded(
             child: GestureDetector(
-              onTap: () {
-                _unfocusTopicField();
-                setState(() => _selectedLength = option);
-              },
+              onTap: lengthLocked
+                  ? () {
+                      _unfocusTopicField();
+                      showToast(
+                        context: context,
+                        message:
+                            'Medium and long lengths are Premium. Select Short or subscribe.',
+                      );
+                    }
+                  : () {
+                      _unfocusTopicField();
+                      setState(() => _selectedLength = option);
+                    },
               behavior: HitTestBehavior.opaque,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.all(3),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: isSelected
-                      ? const LinearGradient(colors: [_purpleA, _purpleB])
-                      : null,
-                  borderRadius: BorderRadius.circular(10),
-                  border: !isSelected
-                      ? Border.all(color: Colors.transparent)
-                      : null,
-                ),
-                child: Center(
-                  child: Text(
-                    option,
-                    style: GoogleFonts.inter(
-                      fontSize: _createStoryFs(14),
-                      fontWeight: FontWeight.w700,
-                      color: isSelected ? Colors.white : _textPrimary,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: lengthLocked ? 0.45 : 1,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.all(3),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: isSelected && !lengthLocked
+                        ? const LinearGradient(colors: [_purpleA, _purpleB])
+                        : null,
+                    borderRadius: BorderRadius.circular(10),
+                    border: !isSelected
+                        ? Border.all(color: Colors.transparent)
+                        : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      option,
+                      style: GoogleFonts.inter(
+                        fontSize: _createStoryFs(14),
+                        fontWeight: FontWeight.w700,
+                        color: isSelected && !lengthLocked
+                            ? Colors.white
+                            : _textPrimary,
+                      ),
                     ),
                   ),
                 ),
@@ -412,60 +494,123 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
                 final icon = _genreIcons[genre] ?? Icons.auto_awesome_rounded;
                 final color = _genreColors[genre] ?? appColor;
                 final selected = _selectedGenre == genre;
+                final genreLocked =
+                    !_storyPremiumUnlocked && !StoryFreemium.isFreeGenre(genre);
                 return InkWell(
-                  onTap: () => Navigator.pop(context, genre),
+                  onTap: genreLocked
+                      ? () {
+                          showToast(
+                            context: context,
+                            message:
+                                'This genre is Premium. Subscribe to unlock it.',
+                          );
+                        }
+                      : () => Navigator.pop(context, genre),
                   borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    height: 84,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: cardSurface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: appColor.withOpacity(0.45)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(icon, color: Colors.white, size: 26),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: genreLocked ? 0.5 : 1,
+                    child: Container(
+                      height: 84,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: cardSurface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: genreLocked
+                              ? Colors.grey.withOpacity(0.35)
+                              : appColor.withOpacity(0.45),
                         ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            genre,
-                            style: GoogleFonts.inter(
-                              fontSize:
-                                  _createStoryFs(20 / 1.2) * 0.85,
-                              fontWeight: FontWeight.w500,
-                              color: _textPrimary,
+                      ),
+                      child: Row(
+                        children: [
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color:
+                                      genreLocked ? color.withOpacity(0.55) : color,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(icon, color: Colors.white, size: 26),
+                              ),
+                              if (genreLocked)
+                                Positioned(
+                                  right: -2,
+                                  top: -2,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF6D3BBF),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.lock_rounded,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  genre,
+                                  style: GoogleFonts.inter(
+                                    fontSize:
+                                        _createStoryFs(20 / 1.2) * 0.85,
+                                    fontWeight: FontWeight.w500,
+                                    color: genreLocked
+                                        ? _textSecondary
+                                        : _textPrimary,
+                                  ),
+                                ),
+                                if (genreLocked)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      'Premium',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: appColor.withOpacity(0.9),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                        ),
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: appColor.withOpacity(0.7),
-                              width: 2,
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: appColor.withOpacity(genreLocked ? 0.25 : 0.7),
+                                width: 2,
+                              ),
+                              color: selected && !genreLocked
+                                  ? appColor
+                                  : Colors.transparent,
                             ),
-                            color: selected ? appColor : Colors.transparent,
+                            child: selected && !genreLocked
+                                ? const Icon(
+                                    Icons.check_rounded,
+                                    color: Colors.white,
+                                    size: 24,
+                                  )
+                                : null,
                           ),
-                          child: selected
-                              ? const Icon(
-                                  Icons.check_rounded,
-                                  color: Colors.white,
-                                  size: 24,
-                                )
-                              : null,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -552,19 +697,27 @@ class _GenerateStoryScreenState extends State<GenerateStoryScreen> {
           : () {
               if (isValidation()) {
                 FocusManager.instance.primaryFocus?.unfocus();
+                final levelKey = _selectedLevel.toString().contains('(')
+                    ? _selectedLevel!
+                        .split('(')[1]
+                        .replaceAll(')', '')
+                        .trim()
+                        .toLowerCase()
+                    : _selectedLevel.toString().toLowerCase();
+                final block = StoryFreemium.blockingReasonForStoryGenerate(
+                  genre: _selectedGenre,
+                  storyLengthLower: _selectedLength.toLowerCase(),
+                );
+                if (block != null) {
+                  StoryFreemium.promptSubscribe(context, message: block);
+                  return;
+                }
                 final storyDetails = {
                   "stroyDescription": _storyDescriptionController.text.trim(),
                   "storyLength": _selectedLength.toLowerCase(),
                   "genre": _selectedGenre,
                   "style": _selectedStyle,
-                  "learningLevel": _selectedLevel.toString().contains('(')
-                      ? _selectedLevel
-                          .toString()
-                          .split('(')[1]
-                          .replaceAll(')', '')
-                          .trim()
-                          .toLowerCase()
-                      : _selectedLevel.toString().toLowerCase(),
+                  "learningLevel": levelKey,
                 };
                 BlocProvider.of<AppCubit>(context).generateStory(token, storyDetails);
               }

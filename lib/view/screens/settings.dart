@@ -8,6 +8,9 @@ import 'package:spokiai/view/screens/privacypolicy.dart';
 import 'package:spokiai/view/screens/termscondition.dart';
 import 'package:spokiai/view/utils/colors.dart';
 import 'package:spokiai/view/utils/custom_widgets.dart';
+import 'package:spokiai/payment/SubscriptionService.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
+import 'package:spokiai/payment/story_freemium.dart';
 import 'package:spokiai/view/utils/preference_manager.dart';
 import 'package:spokiai/view/utils/theme_controller.dart';
 
@@ -422,6 +425,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             TextButton(
               onPressed: () async {
+                ChatFreemium.resetVolatileState();
+                StoryFreemium.resetVolatileState();
+                SubscriptionService.instance.clearSessionBillingState();
                 PreferenceManager.clearPreferences();
                 await FirebaseAuth.instance.signOut();
                 if (!mounted) return;

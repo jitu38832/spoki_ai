@@ -7,11 +7,14 @@ plugins {
 import java.util.Properties
 import java.io.FileInputStream
 
-// Load keystore properties AFTER plugins block
+// Load keystore properties AFTER plugins block (optional; omit file for debug/local builds).
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file("key.properties")
+boolean hasReleaseKeystore = false
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    def storePath = keystoreProperties["storeFile"]
+    hasReleaseKeystore = storePath != null && storePath.toString().trim().length() > 0
 }
 
 android {
@@ -38,17 +41,21 @@ android {
     }
 
     signingConfigs {
-         release {
-             keyAlias keystoreProperties["keyAlias"]
-             keyPassword keystoreProperties["keyPassword"]
-             storeFile file(keystoreProperties["storeFile"])
-             storePassword keystoreProperties["storePassword"]
-         }
+        release {
+            if (hasReleaseKeystore) {
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+            }
+        }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile(

@@ -1,4 +1,5 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:spokiai/view/utils/preference_manager.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -23,6 +24,7 @@ class SocketService {
     socket = IO.io(
       'ws://3.109.110.211',
       // 'ws://192.168.1.6:9799',
+      // 'ws://192.168.1.2:9799',
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableAutoConnect()
@@ -131,6 +133,11 @@ class SocketService {
     payload['pronunciationMode'] = hasAudio ? 'audio' : 'disabled_without_audio';
     if (hasAudio) {
       payload['audioUrl'] = au;
+    }
+    final tok = PreferenceManager.getStringValue(key: 'token')?.trim();
+    if (tok != null && tok.isNotEmpty) {
+      payload['token'] = tok;
+      payload['accessToken'] = tok;
     }
     socket.emit('aifeedback', payload);
     print('📤 aifeedback: ${t.length} chars, hasAudio=$hasAudio');

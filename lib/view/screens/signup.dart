@@ -10,6 +10,11 @@ import '../../viewmodel/cubit/appcubit.dart';
 import '../utils/colors.dart';
 import '../utils/constants.dart';
 import '../utils/custom_widgets.dart';
+import 'package:spokiai/payment/chat_freemium.dart';
+import 'package:spokiai/payment/story_freemium.dart';
+import 'package:spokiai/payment/post_login_entitlements_sync.dart';
+import 'package:spokiai/payment/SubscriptionService.dart';
+
 import '../utils/preference_manager.dart';
 import 'dashboard.dart';
 import 'editprofile.dart';
@@ -41,6 +46,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   void _forceLogoutToLogin() {
+    ChatFreemium.resetVolatileState();
+    StoryFreemium.resetVolatileState();
+    SubscriptionService.instance.clearSessionBillingState();
     PreferenceManager.clearPreferences();
     if (!mounted) return;
     showToast(context: context, message: "Session expired. Please login again.");
@@ -154,6 +162,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
                           await PreferenceManager.insertValue(
                               key: "token", value: accessToken);
+                          PreferenceManager.cacheProfileEmail(
+                              emailController.text.trim());
 
                           if (!context.mounted) return;
                           showToast(
@@ -172,6 +182,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           setState(() => _routeAfterSignupProfile = false);
                           final response = state.responseData?.response
                               as GetProfileResponse;
+                          PreferenceManager.cacheProfileDisplayName(
+                              response.data?.name);
+                          await syncBillingAndChatQuotasAfterLogin(
+                            context.read<AppCubit>().repository,
+                          );
                           if (!context.mounted) return;
                           final incomplete =
                               profileNeedsCompletion(response.data);
